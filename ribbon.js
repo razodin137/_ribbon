@@ -66,14 +66,34 @@
       letter-spacing: .12em;
       color: #979284;
     }
-    .leds { display: flex; align-items: center; gap: 4px; flex: none; }
+    .led-wrap { position: relative; display: flex; align-items: center; flex: none; }
+    .leds {
+      appearance: none;
+      -webkit-appearance: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      height: 28px;
+      margin: 0 0 0 -7px;
+      padding: 0 7px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+      touch-action: manipulation;
+    }
+    .leds:hover { background: rgba(255, 255, 255, .06); }
+    .leds:focus-visible { outline: 2px solid #d0a64a; outline-offset: 1px; }
     .led {
-      width: 6px;
-      height: 6px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: #454741;
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
       transition: background .2s ease, box-shadow .2s ease;
+      flex: none;
     }
     .led.ok {
       background: #65d18a;
@@ -88,6 +108,49 @@
       box-shadow: 0 0 0 3px rgba(224, 103, 90, .1), 0 0 8px rgba(224, 103, 90, .45);
     }
     .led.off { background: #454741; box-shadow: none; }
+    .led-tip {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: -2px;
+      z-index: 30;
+      width: max-content;
+      max-width: min(320px, calc(100vw - 24px));
+      padding: 9px 11px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 8px;
+      background: #1b1d18;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .4);
+      color: #e9e4d6;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.45;
+      letter-spacing: 0;
+      text-transform: none;
+      white-space: normal;
+      opacity: 0;
+      transform: translateY(-4px) scale(.98);
+      transform-origin: top left;
+      transition: opacity .15s ease, transform .18s cubic-bezier(.2, .7, .2, 1);
+      pointer-events: none;
+    }
+    .led-tip.is-open { opacity: 1; transform: none; }
+    .led-tip::before {
+      content: "";
+      position: absolute;
+      top: -5px;
+      left: 15px;
+      width: 8px;
+      height: 8px;
+      background: #1b1d18;
+      border-top: 1px solid rgba(255, 255, 255, .14);
+      border-left: 1px solid rgba(255, 255, 255, .14);
+      transform: rotate(45deg);
+    }
+    .led-tip-row { display: flex; align-items: flex-start; gap: 7px; }
+    .led-tip-row + .led-tip-row { margin-top: 5px; }
+    .led-tip-row .led { margin-top: 3px; }
+    .led-tip-row span:last-child { display: block; }
     .count { color: #cfc9b9; min-width: 52px; }
 
     .title {
@@ -169,12 +232,12 @@
       .title { font-size: 12.5px; }
     }
     @media (max-width: 420px) {
-      .leds { gap: 3px; }
+      .leds { gap: 4px; padding: 0 5px; margin-left: -5px; }
       .count { font-size: 9px; }
       .peek-label { display: none; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .bar, .peek { transition: none; }
+      .bar, .peek, .led-tip { transition: none; }
     }
   `;
 
@@ -242,7 +305,19 @@
     shadow.innerHTML =
       "<style>" + CSS + "</style>" +
       '<div class="bar" role="navigation" aria-label="App ribbon">' +
-        '<div class="meta"><span class="leds" aria-label="Repository and push status"><span class="led off" data-led="repo" role="img" aria-label="Repository status"></span><span class="led off" data-led="sync" role="img" aria-label="Push status"></span></span><span class="count"></span></div>' +
+        '<div class="meta">' +
+          '<span class="led-wrap">' +
+            '<button class="leds" type="button" aria-label="Git status" aria-expanded="false" aria-describedby="led-tip">' +
+              '<span class="led off" data-led="repo" aria-hidden="true"></span>' +
+              '<span class="led off" data-led="sync" aria-hidden="true"></span>' +
+            '</button>' +
+            '<span class="led-tip" id="led-tip" role="tooltip" aria-hidden="true">' +
+              '<span class="led-tip-row"><span class="led off" data-tip-led="repo" aria-hidden="true"></span><span data-tip-text="repo"></span></span>' +
+              '<span class="led-tip-row"><span class="led off" data-tip-led="sync" aria-hidden="true"></span><span data-tip-text="sync"></span></span>' +
+            '</span>' +
+          '</span>' +
+          '<span class="count"></span>' +
+        '</div>' +
         '<div class="title"></div>' +
         '<div class="actions">' +
           '<button class="btn" type="button" data-act="prev" aria-label="Previous app" title="Previous app — [">' +
@@ -273,6 +348,13 @@
     var peekEl = shadow.querySelector(".peek");
     var ledRepo = shadow.querySelector('[data-led="repo"]');
     var ledSync = shadow.querySelector('[data-led="sync"]');
+    var ledsButton = shadow.querySelector(".leds");
+    var ledWrap = ledsButton.parentNode;
+    var ledTip = shadow.querySelector(".led-tip");
+    var tipRepoDot = ledTip.querySelector('[data-tip-led="repo"]');
+    var tipSyncDot = ledTip.querySelector('[data-tip-led="sync"]');
+    var tipRepoText = ledTip.querySelector('[data-tip-text="repo"]');
+    var tipSyncText = ledTip.querySelector('[data-tip-text="sync"]');
     var buttons = shadow.querySelectorAll("button[data-act]");
 
     var here = normalizePath(location.pathname);
@@ -315,9 +397,13 @@
     var manualHidden = readHidden();
     var autoHidden = false;
     var lastTargets = new Map();
+    var tipPinned = false;
+    var tipTimer = 0;
+    var hoverCapable = window.matchMedia("(hover: hover)").matches;
 
     function applyState() {
       var gone = manualHidden || autoHidden;
+      if (gone) closeTip();
       bar.classList.toggle("is-gone", gone);
       if (gone) bar.setAttribute("inert", "");
       else bar.removeAttribute("inert");
@@ -357,31 +443,39 @@
 
     function setGit(git) {
       var repo = !!(git && git.repo);
-      ledRepo.className = "led " + (repo ? "ok" : "off");
-      ledRepo.title = repo
-        ? "Git repository" + (git.branch ? " — " + git.branch : "")
-        : "Not a Git repository";
-      ledRepo.setAttribute("aria-label", ledRepo.title);
-
       var state = (git && git.state) || "";
-      var cls = "off";
+      var repoClass = repo ? "ok" : "off";
+      var syncClass = "off";
       if (repo) {
-        if (state === "ahead") cls = "bad";
-        else if (state === "dirty" || state === "no-upstream" || state === "detached" || state === "no-commits") cls = "warn";
-        else if (state === "error") cls = "off";
-        else cls = "ok";
+        if (state === "ahead") syncClass = "bad";
+        else if (state === "dirty" || state === "no-upstream" || state === "detached" || state === "no-commits") syncClass = "warn";
+        else if (state === "error") syncClass = "off";
+        else syncClass = "ok";
       }
-      ledSync.className = "led " + cls;
-      ledSync.title = gitTip(git);
-      ledSync.setAttribute("aria-label", ledSync.title);
+
+      ledRepo.className = "led " + repoClass;
+      ledSync.className = "led " + syncClass;
+      tipRepoDot.className = "led " + repoClass;
+      tipSyncDot.className = "led " + syncClass;
+
+      var repoText = repoTip(git);
+      var syncText = gitTip(git);
+      tipRepoText.textContent = repoText;
+      tipSyncText.textContent = syncText;
+      ledsButton.setAttribute("aria-label", repoText + ". " + syncText);
     }
 
-    function gitTip(git) {
+    function repoTip(git) {
       if (!git || !git.repo) {
         return git && git.state === "error"
           ? "Git status unavailable"
           : "Not a Git repository";
       }
+      return "Git repository" + (git.branch ? " — " + git.branch : "");
+    }
+
+    function gitTip(git) {
+      if (!git || !git.repo) return "No push status";
       var bits = [];
       if (git.state === "ahead") {
         var count = git.ahead || 1;
@@ -404,6 +498,40 @@
       return bits.join(" · ");
     }
 
+    function openTip(pin) {
+      if (pin) tipPinned = true;
+      ledTip.classList.add("is-open");
+      ledTip.setAttribute("aria-hidden", "false");
+      ledsButton.setAttribute("aria-expanded", "true");
+      if (tipTimer) {
+        clearTimeout(tipTimer);
+        tipTimer = 0;
+      }
+      if (!hoverCapable && tipPinned) {
+        tipTimer = setTimeout(closeTip, 5000);
+      }
+    }
+
+    function closeTip() {
+      tipPinned = false;
+      ledTip.classList.remove("is-open");
+      ledTip.setAttribute("aria-hidden", "true");
+      ledsButton.setAttribute("aria-expanded", "false");
+      if (tipTimer) {
+        clearTimeout(tipTimer);
+        tipTimer = 0;
+      }
+    }
+
+    function toggleTip() {
+      if (ledTip.classList.contains("is-open") && tipPinned) closeTip();
+      else openTip(true);
+    }
+
+    function closeTipIfUnpinned() {
+      if (!tipPinned) closeTip();
+    }
+
     shadow.addEventListener("click", function (event) {
       var button = event.target && event.target.closest
         ? event.target.closest("button[data-act]")
@@ -418,6 +546,25 @@
     peekEl.addEventListener("click", function () {
       setManual(false);
     });
+
+    ledsButton.addEventListener("click", function (event) {
+      event.stopPropagation();
+      toggleTip();
+    });
+    ledsButton.addEventListener("pointerenter", function () {
+      if (hoverCapable) openTip(false);
+    });
+    ledsButton.addEventListener("pointerleave", closeTipIfUnpinned);
+    ledsButton.addEventListener("focus", function () {
+      openTip(false);
+    });
+    ledsButton.addEventListener("blur", closeTipIfUnpinned);
+    document.addEventListener("pointerdown", function (event) {
+      if (!ledTip.classList.contains("is-open")) return;
+      var path = event.composedPath ? event.composedPath() : [];
+      if (path.indexOf(ledWrap) !== -1) return;
+      closeTip();
+    }, true);
 
     var pending = null;
     function processScroll() {
@@ -469,6 +616,13 @@
       }
 
       var key = event.key;
+      if (key === "Escape" && ledTip.classList.contains("is-open")) {
+        closeTip();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       var handled = true;
       if (key === "[") go(-1);
       else if (key === "]") go(1);

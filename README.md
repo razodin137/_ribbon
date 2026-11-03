@@ -49,7 +49,9 @@ bar back.
 
 The bar also hides itself when you scroll down, and comes back when you
 scroll up. At the very top of the page it sits in its own strip, so the
-app's own header stays visible.
+app's own header stays visible. Its buttons stay in the same place on every
+app — even an app that is too short to scroll — so you can keep clicking
+without looking.
 
 ## Find any app fast
 

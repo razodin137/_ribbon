@@ -19,6 +19,7 @@
       scriptBase = new URL(".", scriptEl.src).href
     } catch (_) { /* keep the default base */ }
   }
+  const CACHE_KEY = "ribbon:apps:" + scriptBase
 
   const STORAGE_KEY = "ribbon:hidden"
   const BAR_HEIGHT = 40
@@ -781,6 +782,11 @@
       return
     }
 
+    // Draw the bar from the last list straight away, then refresh it when the
+    // manifest arrives. Switching apps no longer waits on the manifest first.
+    const cached = readCachedApps()
+    let update = cached ? mount(cached) : null
+
     fetch(manifestUrl, { cache: "no-store" })
       .then(function (response) {
         if (!response.ok) throw new Error("HTTP " + response.status)
@@ -788,18 +794,46 @@
       })
       .then(function (data) {
         const apps = Array.isArray(data) ? data : data && data.apps
-        if (Array.isArray(apps) && apps.length) mount(apps)
+        if (!Array.isArray(apps) || !apps.length) return
+        writeCachedApps(apps)
+        if (update) update(apps)
+        else update = mount(apps) || null
       })
       .catch(function () {
         /* No manifest (for example, opened from file://): stay quiet. */
       })
   }
 
+  function readCachedApps() {
+    try {
+      const data = JSON.parse(sessionStorage.getItem(CACHE_KEY) || "null")
+      const apps = Array.isArray(data) ? data : data && data.apps
+      return Array.isArray(apps) && apps.length ? apps : null
+    } catch (_) {
+      return null
+    }
+  }
+
+  function writeCachedApps(apps) {
+    try {
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(apps))
+    } catch (_) { /* storage may be unavailable */ }
+  }
+
   function mount(rawApps) {
-    const apps = rawApps.filter(function (app) {
+    let apps = rawApps.filter(function (app) {
       return app && typeof app.url === "string" && app.url
     })
     if (!apps.length) return
+
+    // A page that does not scroll is a little wider than one that does, which
+    // moves the right-aligned buttons. Reserve the gutter on every page so the
+    // controls stay in the same place from app to app.
+    document.documentElement.style.setProperty(
+      "scrollbar-gutter",
+      "stable",
+      "important"
+    )
 
     const host = document.createElement("div")
     host.setAttribute("data-ribbon-host", "")
@@ -1007,30 +1041,36 @@
     const menuAllHeading = menuAllSection.querySelector(".menu-heading")
     const menuEmpty = shadow.querySelector(".menu-empty")
 
-    const here = normalizePath(location.pathname)
     let index = -1
-    for (let i = 0; i < apps.length; i += 1) {
-      if (normalizePath(entryPath(apps[i])) === here) {
-        index = i
-        break
-      }
-    }
-    const exact = index >= 0
-    if (index < 0) {
-      let bestLength = -1
-      for (let j = 0; j < apps.length; j += 1) {
-        const candidate = normalizePath(entryPath(apps[j]))
-        if (here.indexOf(candidate) === 0 && candidate.length > bestLength) {
-          bestLength = candidate.length
-          index = j
+
+    function locate() {
+      const here = normalizePath(location.pathname)
+      let found = -1
+      for (let i = 0; i < apps.length; i += 1) {
+        if (normalizePath(entryPath(apps[i])) === here) {
+          found = i
+          break
         }
       }
+      const exact = found >= 0
+      if (found < 0) {
+        let bestLength = -1
+        for (let j = 0; j < apps.length; j += 1) {
+          const candidate = normalizePath(entryPath(apps[j]))
+          if (here.indexOf(candidate) === 0 && candidate.length > bestLength) {
+            bestLength = candidate.length
+            found = j
+          }
+        }
+      }
+      const pageTitle = (document.title || "").trim()
+      return {
+        index: found,
+        title: exact && apps[found]
+          ? apps[found].title
+          : pageTitle || (apps[found] && apps[found].title) || "Untitled"
+      }
     }
-
-    const pageTitle = (document.title || "").trim()
-    const currentTitle = exact && apps[index]
-      ? apps[index].title
-      : pageTitle || (apps[index] && apps[index].title) || "Untitled"
 
     const favorites = readFavorites()
     let menuOpen = false
@@ -1040,20 +1080,25 @@
     let gitBlocked = false
     let gitReturnFocus = null
 
-    titleText.textContent = currentTitle
-    titleButton.title = "Show all apps"
-    menuCurrentTitle.textContent = currentTitle
-    countEl.textContent = (index >= 0 ? pad(index + 1, apps.length) : "—") + " / " + pad(apps.length, apps.length)
-    setGit(apps[index] && apps[index].git)
-    updateCurrentStar()
-
-    if (apps.length < 2) {
+    function applyApps() {
+      const current = locate()
+      index = current.index
+      titleText.textContent = current.title
+      titleButton.title = "Show all apps"
+      menuCurrentTitle.textContent = current.title
+      countEl.textContent = (index >= 0 ? pad(index + 1, apps.length) : "—") +
+        " / " + pad(apps.length, apps.length)
+      setGit(apps[index] && apps[index].git)
+      updateCurrentStar()
       for (let k = 0; k < buttons.length; k += 1) {
         const act = buttons[k].getAttribute("data-act")
-        if (act !== "hide") buttons[k].disabled = true
+        if (act !== "hide") buttons[k].disabled = apps.length < 2
       }
+      if (menuOpen) renderMenu(searchInput.value)
+      if (window.__ribbon) window.__ribbon.apps = apps
     }
 
+    applyApps()
     let manualHidden = readHidden()
     let autoHidden = false
     let topOffset = false
@@ -2179,9 +2224,19 @@
       apps: apps
     }
 
+    function update(nextApps) {
+      const next = nextApps.filter(function (app) {
+        return app && typeof app.url === "string" && app.url
+      })
+      if (!next.length) return
+      apps = next
+      applyApps()
+    }
+
     setTopOffset(!manualHidden, false)
     applyState()
     document.documentElement.appendChild(host)
+    return update
   }
 
   function normalizePath(path) {

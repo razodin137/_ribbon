@@ -123,7 +123,9 @@ document keep working, and you can jump back out with the bar.
 
 The app menu shows a small badge for every app: `HTML` for a web page,
 `MD` for Markdown, and codes such as `PY`, `JS`, `RS`, or `SH` for
-project folders. Hover over the badge to see the full type.
+project folders. Badges are color-coded by type — orange for HTML, green
+for Python, grey for shell scripts, and so on — so the same kind of
+project always looks the same. Hover over the badge to see the full type.
 
 ## Check what it found
 

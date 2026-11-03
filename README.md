@@ -5,7 +5,7 @@ all the websites you made, without typing long addresses.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ ● 04 / 11  Beam Library ▾      ‹ Back  › Next  ⤨ Random  ↻    ✕     │
+│ ●●● 04 / 11  Beam Library ▾    ‹ Back  › Next  ⤨ Random  ↻    ✕     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -123,19 +123,40 @@ also keep favorites in a separate place, or forget them altogether. If you
 want everything to work the same way every time, use the server version at
 the top of this page.
 
-## What are the two little lights?
+## The three little lights
 
-They are about **Git**. Git is a tool grown-ups use to save and back up
-versions of their work.
+They show the **Git** state of the app you are looking at. Git is a tool
+grown-ups use to save and back up versions of their work.
 
-- **Left light** — green means this app is saved in Git. Dark means it is
-  not.
-- **Right light** — green means everything is backed up. Yellow means
-  there are changes that are not saved yet. Red means there are saved
-  changes that have not been sent to the internet. Dark means there is no
-  Git here.
+| Light | What it means | Click it to |
+| --- | --- | --- |
+| Left | Green: this folder is saved in Git. Dark: it is not. | Create a repository. |
+| Middle | Green: nothing new to save. Yellow: unsaved changes. | Commit the changes. |
+| Right | Green: backed up. Yellow: not pushed. Red: commits waiting. Dark: no remote. | Push or create a remote. |
 
-Hover over the lights to read exactly what is going on.
+Hover over a light to read exactly what is going on.
+
+Clicking a light opens a small panel. It shows the repository folder,
+branch, changed files, and any warnings. Nothing happens until you press
+the button in that panel.
+
+- **Create a repository** makes `.git`, adds a starter `.gitignore`
+  (unless you uncheck it), and makes the first commit.
+- **Commit** stages every changed file and saves it with your message.
+- **Push** sends your commits to the remote.
+- **Create a remote** uses the GitHub CLI (`gh`) to make a **private**
+  repository and push. You can choose Public instead. Run
+  `gh auth login` once before using this.
+
+Two safety notes:
+
+- The panel lists the files that will be committed. Look for `.env`
+  files, keys, or anything over 5 MB before pressing the button.
+- A nested app shares its parent's repository. The panel shows the real
+  repository folder and branch, so you know what you are saving.
+
+Git actions only work when the ribbon server is running on `127.0.0.1`.
+Use `--no-git-actions` if you want the lights but not the buttons.
 
 ## If something goes wrong
 
@@ -146,6 +167,9 @@ Hover over the lights to read exactly what is going on.
 | The keyboard shortcuts do nothing | Use the server version. Browsers turn them off when you open the file directly. |
 | It shows the wrong folder | Add `--root ~/the/folder/you/want`. |
 | The address is already in use | Ribbon tries the next port by itself. It tells you which one it picked. |
+| The Git buttons are greyed out | Start Ribbon on `127.0.0.1` without `--no-git-actions`. Opening the page as a file cannot run Git. |
+| **Create a remote** fails | Run `gh auth login`, and check that the repository name is not already taken. |
+| Git says there is nothing to commit | The app was refreshed before the last file change. Close the panel and open it again. |
 | You forgot the commands | Run `python3 _ribbon/ribbon.py --help`. |
 
 ## All the commands
@@ -159,6 +183,7 @@ python3 _ribbon/ribbon.py --port 9000      # use a different port
 python3 _ribbon/ribbon.py --no-open        # don't open a browser
 python3 _ribbon/ribbon.py --include-untitled
 python3 _ribbon/ribbon.py --write-apps     # refresh the no-server list
+python3 _ribbon/ribbon.py --no-git-actions # lights only, no commit/push
 python3 _ribbon/ribbon.py --verbose        # show every request
 python3 _ribbon/ribbon.py --help           # all options, with examples
 ```
@@ -175,5 +200,6 @@ _ribbon/
   ribbon.js   the bar itself
 ```
 
-Nothing on your disk is changed when the server runs. The bar is added to
-pages only while they are being sent to your browser.
+The server does not change your pages. The bar is added only while a page
+is being sent to your browser. Git actions do change the repository, but
+only after you press a button and confirm what will be included.

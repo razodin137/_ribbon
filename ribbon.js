@@ -68,24 +68,35 @@
     }
     .led-wrap { position: relative; display: flex; align-items: center; flex: none; }
     .leds {
-      appearance: none;
-      -webkit-appearance: none;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 5px;
+      gap: 1px;
       height: 28px;
-      margin: 0 0 0 -7px;
-      padding: 0 7px;
-      border: 0;
+      margin: 0 0 0 -6px;
+      padding: 0 3px;
       border-radius: 6px;
       background: transparent;
-      cursor: pointer;
+    }
+    .led-btn {
+      appearance: none;
+      -webkit-appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 28px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
       font: inherit;
+      cursor: pointer;
       touch-action: manipulation;
     }
-    .leds:hover { background: rgba(255, 255, 255, .06); }
-    .leds:focus-visible { outline: 2px solid #d0a64a; outline-offset: 1px; }
+    .led-btn:hover { background: rgba(255, 255, 255, .08); }
+    .led-btn:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
     .led {
       width: 8px;
       height: 8px;
@@ -395,6 +406,231 @@
     }
     .menu-empty[hidden] { display: none; }
 
+    .git-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(8, 9, 7, .62);
+      -webkit-backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px);
+      pointer-events: auto;
+    }
+    .git-overlay[hidden] { display: none; }
+
+    .git-dialog {
+      width: min(560px, 100%);
+      max-height: min(86vh, 720px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 12px;
+      background: #1b1d18;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+      color: #e9e4d6;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .git-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px 11px;
+      border-bottom: 1px solid rgba(255, 255, 255, .1);
+    }
+    .git-heading { flex: 1 1 auto; min-width: 0; }
+    .git-kicker {
+      margin-bottom: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #979284;
+    }
+    .git-title { font-size: 15px; font-weight: 600; color: #f4f0e6; }
+    .git-close {
+      appearance: none;
+      -webkit-appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      margin: -2px -4px 0 0;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #979284;
+      font: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      flex: none;
+    }
+    .git-close:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+    .git-close:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
+
+    .git-body {
+      overflow-y: auto;
+      padding: 14px 16px;
+    }
+
+    .git-summary { display: grid; gap: 3px; }
+    .git-summary-row { display: flex; align-items: baseline; gap: 8px; }
+    .git-summary-label {
+      flex: 0 0 76px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #979284;
+    }
+    .git-summary-value {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      color: #e9e4d6;
+    }
+
+    .git-files {
+      max-height: 150px;
+      margin-top: 12px;
+      padding: 5px 0;
+      overflow-y: auto;
+      border: 1px solid rgba(255, 255, 255, .1);
+      border-radius: 7px;
+      background: #12130f;
+    }
+    .git-file {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      padding: 2px 9px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 10.5px;
+    }
+    .git-file-code { flex: none; width: 20px; color: #e0b35a; }
+    .git-file-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cfc9b9; }
+    .git-file-more { padding: 4px 9px 1px; color: #7f7b6e; font-size: 10.5px; }
+
+    .git-warnings {
+      margin-top: 12px;
+      padding: 9px 11px;
+      border: 1px solid rgba(224, 179, 90, .35);
+      border-radius: 7px;
+      background: rgba(224, 179, 90, .08);
+      color: #e8c982;
+      font-size: 11.5px;
+    }
+    .git-warning + .git-warning { margin-top: 4px; }
+
+    .git-field { display: block; margin-top: 14px; }
+    .git-field[hidden] { display: none; }
+    .git-label {
+      display: block;
+      margin-bottom: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #979284;
+    }
+    .git-input {
+      width: 100%;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 6px;
+      background: #12130f;
+      color: #eee9dc;
+      font: inherit;
+      font-size: 12.5px;
+      outline: none;
+    }
+    .git-input:focus {
+      border-color: #d0a64a;
+      box-shadow: 0 0 0 2px rgba(208, 166, 74, .18);
+    }
+
+    .git-radios { display: flex; gap: 18px; padding: 3px 0 1px; }
+    .git-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #cfc9b8; cursor: pointer; }
+    .git-radio input { accent-color: #d0a64a; }
+
+    .git-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 14px;
+      font-size: 12.5px;
+      color: #cfc9b8;
+      cursor: pointer;
+    }
+    .git-check[hidden] { display: none; }
+    .git-check input { margin-top: 2px; accent-color: #d0a64a; }
+
+    .git-note {
+      margin-top: 12px;
+      padding: 9px 11px;
+      border: 1px solid rgba(255, 255, 255, .1);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, .03);
+      color: #a9a496;
+      font-size: 11.5px;
+    }
+    .git-output {
+      margin: 12px 0 0;
+      padding: 9px 11px;
+      max-height: 170px;
+      overflow: auto;
+      border: 1px solid rgba(255, 255, 255, .1);
+      border-radius: 7px;
+      background: #12130f;
+      color: #d8d2c2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 10.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .git-output[hidden] { display: none; }
+
+    .git-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 16px;
+      border-top: 1px solid rgba(255, 255, 255, .1);
+    }
+    .git-status {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #979284;
+      font-size: 11px;
+    }
+    .git-status.is-good { color: #8dd9a8; }
+    .git-status.is-bad { color: #e0897e; }
+    .btn.git-primary {
+      border-color: rgba(208, 166, 74, .55);
+      background: #d0a64a;
+      color: #17180f;
+      font-weight: 600;
+    }
+    .btn.git-primary:hover { background: #dfb45a; color: #17180f; }
+    .btn.git-primary:disabled { opacity: .5; cursor: default; }
+
     .actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
     .btn {
       appearance: none;
@@ -464,9 +700,11 @@
         width: calc(100vw - 8px);
         max-height: calc(100vh - 56px);
       }
+      .git-overlay { padding: 8px; }
+      .git-dialog { max-height: calc(100vh - 16px); }
     }
     @media (max-width: 420px) {
-      .leds { gap: 4px; padding: 0 5px; margin-left: -5px; }
+      .leds { gap: 0; padding: 0 2px; margin-left: -5px; }
       .count { font-size: 9px; }
       .peek-label { display: none; }
       .menu-app-dir { display: none; }
@@ -542,13 +780,15 @@
       '<div class="bar" role="navigation" aria-label="App ribbon">' +
         '<div class="meta">' +
           '<span class="led-wrap">' +
-            '<button class="leds" type="button" aria-label="Git status" aria-expanded="false" aria-describedby="led-tip">' +
-              '<span class="led off" data-led="repo" aria-hidden="true"></span>' +
-              '<span class="led off" data-led="sync" aria-hidden="true"></span>' +
-            '</button>' +
+            '<span class="leds" role="group" aria-label="Git status" aria-describedby="led-tip">' +
+              '<button class="led-btn" type="button" data-led="repo" aria-label="Repository status"><span class="led off" data-led-dot="repo" aria-hidden="true"></span></button>' +
+              '<button class="led-btn" type="button" data-led="changes" aria-label="Changes status"><span class="led off" data-led-dot="changes" aria-hidden="true"></span></button>' +
+              '<button class="led-btn" type="button" data-led="remote" aria-label="Remote status"><span class="led off" data-led-dot="remote" aria-hidden="true"></span></button>' +
+            '</span>' +
             '<span class="led-tip" id="led-tip" role="tooltip" aria-hidden="true">' +
               '<span class="led-tip-row"><span class="led off" data-tip-led="repo" aria-hidden="true"></span><span data-tip-text="repo"></span></span>' +
-              '<span class="led-tip-row"><span class="led off" data-tip-led="sync" aria-hidden="true"></span><span data-tip-text="sync"></span></span>' +
+              '<span class="led-tip-row"><span class="led off" data-tip-led="changes" aria-hidden="true"></span><span data-tip-text="changes"></span></span>' +
+              '<span class="led-tip-row"><span class="led off" data-tip-led="remote" aria-hidden="true"></span><span data-tip-text="remote"></span></span>' +
             '</span>' +
           '</span>' +
           '<span class="count"></span>' +
@@ -606,23 +846,90 @@
       '</div>' +
       '<button class="peek" type="button" aria-label="Show ribbon" title="Show ribbon — H">' +
         '<span aria-hidden="true">▤</span><span class="peek-label">ribbon</span>' +
-      '</button>';
+      '</button>' +
+      '<div class="git-overlay" hidden>' +
+        '<div class="git-dialog" role="dialog" aria-modal="true" aria-labelledby="git-title">' +
+          '<div class="git-head">' +
+            '<div class="git-heading">' +
+              '<div class="git-kicker">Git</div>' +
+              '<div class="git-title" id="git-title"></div>' +
+            '</div>' +
+            '<button class="git-close" type="button" aria-label="Close">✕</button>' +
+          '</div>' +
+          '<div class="git-body">' +
+            '<div class="git-summary"></div>' +
+            '<div class="git-files" hidden></div>' +
+            '<div class="git-warnings" hidden></div>' +
+            '<label class="git-field git-message-field" hidden>' +
+              '<span class="git-label">Commit message</span>' +
+              '<input class="git-input git-message" type="text" maxlength="2000" autocomplete="off">' +
+            '</label>' +
+            '<label class="git-field git-name-field" hidden>' +
+              '<span class="git-label">GitHub repo name</span>' +
+              '<input class="git-input git-name" type="text" maxlength="100" autocomplete="off" spellcheck="false">' +
+            '</label>' +
+            '<div class="git-field git-visibility-field" hidden>' +
+              '<span class="git-label">Visibility</span>' +
+              '<div class="git-radios">' +
+                '<label class="git-radio"><input type="radio" name="git-visibility" value="private" checked> Private</label>' +
+                '<label class="git-radio"><input type="radio" name="git-visibility" value="public"> Public</label>' +
+              '</div>' +
+            '</div>' +
+            '<label class="git-check git-ignore-field" hidden>' +
+              '<input type="checkbox" class="git-ignore" checked>' +
+              '<span>Add a .gitignore for node_modules, .venv, dist…</span>' +
+            '</label>' +
+            '<div class="git-note" hidden></div>' +
+            '<pre class="git-output" hidden></pre>' +
+          '</div>' +
+          '<div class="git-actions">' +
+            '<span class="git-status"></span>' +
+            '<button class="btn git-cancel" type="button">Close</button>' +
+            '<button class="btn git-primary" type="button" hidden></button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
 
     var bar = shadow.querySelector(".bar");
     var countEl = shadow.querySelector(".count");
     var titleButton = shadow.querySelector(".title");
     var titleText = shadow.querySelector(".title-text");
     var peekEl = shadow.querySelector(".peek");
-    var ledRepo = shadow.querySelector('[data-led="repo"]');
-    var ledSync = shadow.querySelector('[data-led="sync"]');
-    var ledsButton = shadow.querySelector(".leds");
-    var ledWrap = ledsButton.parentNode;
+    var ledRepo = shadow.querySelector('[data-led-dot="repo"]');
+    var ledChanges = shadow.querySelector('[data-led-dot="changes"]');
+    var ledRemote = shadow.querySelector('[data-led-dot="remote"]');
+    var ledsWrap = shadow.querySelector(".leds");
+    var ledButtons = shadow.querySelectorAll(".led-btn");
+    var ledWrap = ledsWrap.parentNode;
     var ledTip = shadow.querySelector(".led-tip");
     var tipRepoDot = ledTip.querySelector('[data-tip-led="repo"]');
-    var tipSyncDot = ledTip.querySelector('[data-tip-led="sync"]');
+    var tipChangesDot = ledTip.querySelector('[data-tip-led="changes"]');
+    var tipRemoteDot = ledTip.querySelector('[data-tip-led="remote"]');
     var tipRepoText = ledTip.querySelector('[data-tip-text="repo"]');
-    var tipSyncText = ledTip.querySelector('[data-tip-text="sync"]');
+    var tipChangesText = ledTip.querySelector('[data-tip-text="changes"]');
+    var tipRemoteText = ledTip.querySelector('[data-tip-text="remote"]');
     var buttons = shadow.querySelectorAll("button[data-act]");
+
+    var gitToken = scriptEl ? scriptEl.getAttribute("data-ribbon-token") || "" : "";
+    var gitOverlay = shadow.querySelector(".git-overlay");
+    var gitTitle = shadow.querySelector(".git-title");
+    var gitSummary = shadow.querySelector(".git-summary");
+    var gitFiles = shadow.querySelector(".git-files");
+    var gitWarnings = shadow.querySelector(".git-warnings");
+    var gitMessageField = shadow.querySelector(".git-message-field");
+    var gitMessage = shadow.querySelector(".git-message");
+    var gitNameField = shadow.querySelector(".git-name-field");
+    var gitName = shadow.querySelector(".git-name");
+    var gitVisibilityField = shadow.querySelector(".git-visibility-field");
+    var gitVisibilityInputs = shadow.querySelectorAll('input[name="git-visibility"]');
+    var gitIgnoreField = shadow.querySelector(".git-ignore-field");
+    var gitIgnore = shadow.querySelector(".git-ignore");
+    var gitNote = shadow.querySelector(".git-note");
+    var gitOutput = shadow.querySelector(".git-output");
+    var gitStatus = shadow.querySelector(".git-status");
+    var gitCancel = shadow.querySelector(".git-cancel");
+    var gitPrimary = shadow.querySelector(".git-primary");
+    var gitClose = shadow.querySelector(".git-close");
 
     var menuEl = shadow.querySelector(".menu");
     var menuCurrentTitle = shadow.querySelector(".menu-current-title");
@@ -662,6 +969,12 @@
 
     var favorites = readFavorites();
     var menuOpen = false;
+    var currentGit = null;
+    var gitDetail = null;
+    var gitAction = null;
+    var gitBusy = false;
+    var gitBlocked = false;
+    var gitReturnFocus = null;
 
     titleText.textContent = currentTitle;
     titleButton.title = "Show all apps";
@@ -899,28 +1212,435 @@
       }
     }
 
+    function defaultRepoName() {
+      var app = currentApp();
+      var path = app ? app.path || app.dir || "" : "";
+      var name = path.split("/").pop() || (app && app.title) || "app";
+      name = name.replace(/^\d{4}-\d{2}-\d{2}-/, "");
+      name = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
+      return (name || "app").slice(0, 100);
+    }
+
+    function decideGitAction(detail, focus) {
+      if (!detail || !detail.repo) return "init";
+      if (detail.state === "detached" || detail.state === "conflicted") return "info";
+      var dirty = !!(detail.files && detail.files.length);
+      var hasRemote = !!detail.has_remote;
+      var needsPush = hasRemote && detail.state !== "diverged" && (detail.ahead > 0 || !detail.upstream);
+      if (focus === "changes" && dirty) return "commit";
+      if (focus === "remote") {
+        if (!hasRemote) return detail.state === "no-commits" && !dirty ? "info" : "remote";
+        if (needsPush) return "push";
+      }
+      if (dirty) return "commit";
+      if (!hasRemote) return detail.state === "no-commits" ? "info" : "remote";
+      if (needsPush) return "push";
+      return "info";
+    }
+
+    function summaryRow(label, value) {
+      var row = document.createElement("div");
+      row.className = "git-summary-row";
+      var labelEl = document.createElement("span");
+      labelEl.className = "git-summary-label";
+      labelEl.textContent = label;
+      var valueEl = document.createElement("span");
+      valueEl.className = "git-summary-value";
+      valueEl.textContent = value;
+      valueEl.title = value;
+      row.appendChild(labelEl);
+      row.appendChild(valueEl);
+      gitSummary.appendChild(row);
+    }
+
+    function renderGitUnavailable(message) {
+      gitDetail = null;
+      gitAction = null;
+      gitBlocked = false;
+      gitTitle.textContent = "Git unavailable";
+      gitSummary.textContent = "";
+      summaryRow("Status", message);
+      gitFiles.hidden = true;
+      gitWarnings.hidden = true;
+      gitMessageField.hidden = true;
+      gitNameField.hidden = true;
+      gitVisibilityField.hidden = true;
+      gitIgnoreField.hidden = true;
+      gitNote.hidden = true;
+      gitOutput.hidden = true;
+      gitStatus.className = "git-status";
+      gitStatus.textContent = "";
+      gitPrimary.hidden = true;
+      gitCancel.textContent = "Close";
+      gitCancel.focus();
+    }
+
+    function renderGitPanel(detail, focus, success) {
+      gitDetail = detail;
+      gitAction = decideGitAction(detail, focus);
+      gitBlocked = false;
+
+      var app = currentApp();
+      var titles = {
+        init: "Create a Git repository",
+        commit: "Commit changes",
+        push: "Push commits",
+        remote: "Create a GitHub remote",
+        info: "Git status"
+      };
+      var labels = {
+        init: "Create repo + commit",
+        commit: "Commit changes",
+        push: "Push commits",
+        remote: "Create repo + push"
+      };
+      gitTitle.textContent = titles[gitAction] || "Git status";
+
+      gitSummary.textContent = "";
+      summaryRow("Folder", detail.root || (app && (app.path || app.dir)) || "—");
+      summaryRow("Branch", detail.branch || "—");
+      var fileCount = detail.files ? detail.files.length : 0;
+      summaryRow(
+        "Changes",
+        fileCount
+          ? fileCount + " file" + (fileCount === 1 ? "" : "s")
+          : detail.repo
+            ? "clean"
+            : "no repository"
+      );
+      summaryRow("Remote", detail.remote_url || (detail.has_remote ? "configured" : "none"));
+      if (detail.repo && detail.has_remote) {
+        var sync = [];
+        if (detail.upstream) {
+          if (detail.ahead) sync.push(detail.ahead + " to push");
+          if (detail.behind) sync.push(detail.behind + " behind");
+          if (!sync.length) sync.push("up to date");
+        } else {
+          sync.push("no upstream");
+        }
+        summaryRow("Sync", sync.join(", "));
+      }
+
+      var files = detail.files || [];
+      gitFiles.textContent = "";
+      gitFiles.hidden = !((gitAction === "commit" || gitAction === "init") && files.length);
+      if (!gitFiles.hidden) {
+        files.slice(0, 12).forEach(function (item) {
+          var row = document.createElement("div");
+          row.className = "git-file";
+          var code = document.createElement("span");
+          code.className = "git-file-code";
+          code.textContent = item.code.trim() || "?";
+          var path = document.createElement("span");
+          path.className = "git-file-path";
+          path.textContent = item.path;
+          path.title = item.path;
+          row.appendChild(code);
+          row.appendChild(path);
+          gitFiles.appendChild(row);
+        });
+        if (files.length > 12) {
+          var more = document.createElement("div");
+          more.className = "git-file-more";
+          more.textContent = "+" + (files.length - 12) + " more";
+          gitFiles.appendChild(more);
+        }
+      }
+
+      var warnings = (detail.warnings || []).filter(function (warning) {
+        return !(
+          gitAction === "init" &&
+          !detail.has_gitignore &&
+          warning.indexOf("No .gitignore") === 0
+        );
+      });
+      gitWarnings.textContent = "";
+      gitWarnings.hidden = warnings.length === 0;
+      warnings.forEach(function (warning) {
+        var row = document.createElement("div");
+        row.className = "git-warning";
+        row.textContent = warning;
+        gitWarnings.appendChild(row);
+      });
+
+      var canWrite = !!gitToken;
+      gitMessageField.hidden = !(gitAction === "commit" || gitAction === "init");
+      if (!gitMessageField.hidden) {
+        gitMessage.value = gitAction === "init"
+          ? "Initial commit"
+          : "Update " + ((app && app.title) || detail.branch || "app");
+      }
+      gitNameField.hidden = gitAction !== "remote";
+      if (!gitNameField.hidden) gitName.value = defaultRepoName();
+      gitVisibilityField.hidden = gitAction !== "remote";
+      if (!gitVisibilityField.hidden) {
+        for (var i = 0; i < gitVisibilityInputs.length; i += 1) {
+          gitVisibilityInputs[i].checked = gitVisibilityInputs[i].value === "private";
+        }
+      }
+      gitIgnoreField.hidden = gitAction !== "init" || !!detail.has_gitignore;
+      if (!gitIgnoreField.hidden) gitIgnore.checked = true;
+
+      var notes = [];
+      if (!canWrite) notes.push("Git actions are disabled. Start ribbon.py on 127.0.0.1.");
+      if ((gitAction === "commit" || gitAction === "init") && detail.repo && detail.identity_ok === false) {
+        notes.push(
+          'Set your Git name and email first:\n  git config --global user.name "Your Name"\n  git config --global user.email "you@example.com"'
+        );
+      }
+      if (gitAction === "remote" && detail.gh === false) {
+        notes.push("GitHub CLI (gh) is not installed. Install it, or add a remote by hand.");
+      }
+      if (detail.state === "detached") notes.push("You are on a detached HEAD. Switch to a branch first.");
+      if (detail.state === "conflicted") notes.push("Resolve the merge conflicts, then try again.");
+      if (detail.state === "diverged") notes.push("Local and remote have diverged. Pull or rebase before pushing.");
+      if (detail.state === "behind" && gitAction === "info") {
+        notes.push("The remote has commits you do not have yet.");
+      }
+      if (gitAction === "info" && !notes.length) notes.push("Everything is in order.");
+      gitNote.textContent = notes.join("\n\n");
+      gitNote.hidden = notes.length === 0;
+
+      gitOutput.hidden = true;
+      gitOutput.textContent = "";
+      gitStatus.className = "git-status" + (success ? " is-good" : "");
+      gitStatus.textContent = success || "";
+
+      gitBlocked =
+        !canWrite ||
+        detail.identity_ok === false && (gitAction === "commit" || gitAction === "init") ||
+        gitAction === "remote" && detail.gh === false;
+      gitPrimary.textContent = labels[gitAction] || "";
+      gitPrimary.hidden = !labels[gitAction];
+      gitPrimary.disabled = gitBlocked;
+      gitCancel.textContent = gitAction === "info" ? "Close" : "Cancel";
+      gitCancel.disabled = false;
+      gitClose.disabled = false;
+
+      if (gitAction === "commit" || gitAction === "init") gitMessage.focus();
+      else if (gitAction === "remote") gitName.focus();
+      else if (gitAction === "push") gitPrimary.focus();
+      else gitCancel.focus();
+    }
+
+    function openGitPanel(focus) {
+      var app = currentApp();
+      if (!app || !gitOverlay.hidden) return;
+      closeMenu(false);
+      closeTip();
+      gitReturnFocus = document.activeElement;
+      gitOverlay.hidden = false;
+      gitBusy = false;
+      gitStatus.className = "git-status";
+      gitStatus.textContent = "";
+      gitOutput.hidden = true;
+      gitOutput.textContent = "";
+      gitTitle.textContent = "Checking Git…";
+      gitSummary.textContent = "";
+      gitFiles.hidden = true;
+      gitWarnings.hidden = true;
+      gitNote.hidden = true;
+      gitMessageField.hidden = true;
+      gitNameField.hidden = true;
+      gitVisibilityField.hidden = true;
+      gitIgnoreField.hidden = true;
+      gitPrimary.hidden = true;
+
+      if (location.protocol !== "http:" && location.protocol !== "https:") {
+        renderGitUnavailable("Start the ribbon server to use Git actions.");
+        return;
+      }
+
+      var dir = app.path || app.dir || "";
+      fetch("/__ribbon/git.json?dir=" + encodeURIComponent(dir), { cache: "no-store" })
+        .then(function (response) {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.json();
+        })
+        .then(function (detail) {
+          setGit(detail);
+          if (currentApp()) currentApp().git = detail;
+          renderGitPanel(detail, focus, "");
+        })
+        .catch(function (error) {
+          renderGitUnavailable("Could not read Git status: " + (error.message || error));
+        });
+    }
+
+    function closeGitPanel() {
+      if (gitBusy) return;
+      gitOverlay.hidden = true;
+      gitDetail = null;
+      gitAction = null;
+      if (gitReturnFocus && gitReturnFocus.focus) {
+        try {
+          gitReturnFocus.focus();
+        } catch (_) {}
+      }
+      gitReturnFocus = null;
+    }
+
+    function setGitBusy(busy) {
+      gitBusy = busy;
+      gitPrimary.disabled = busy || gitBlocked;
+      gitCancel.disabled = busy;
+      gitClose.disabled = busy;
+      if (busy) {
+        gitPrimary.textContent = "Working…";
+      } else if (gitAction) {
+        var labels = {
+          init: "Create repo + commit",
+          commit: "Commit changes",
+          push: "Push commits",
+          remote: "Create repo + push"
+        };
+        gitPrimary.textContent = labels[gitAction] || "Continue";
+      }
+    }
+
+    function showGitError(data) {
+      var error = (data && (data.error || data.message)) || "The Git action failed.";
+      var output = (data && data.output) || "";
+      gitStatus.className = "git-status is-bad";
+      gitStatus.textContent = error.split("\n")[0].slice(0, 140);
+      gitOutput.textContent = [error, output].filter(Boolean).join("\n\n");
+      gitOutput.hidden = !gitOutput.textContent;
+    }
+
+    function submitGitAction() {
+      if (gitBusy || !gitAction) return;
+      var app = currentApp();
+      if (!app) return;
+
+      var payload = { action: gitAction, dir: app.path || app.dir || "" };
+      if (gitAction === "init" || gitAction === "commit") {
+        payload.message = gitMessage.value.trim();
+        if (!payload.message) {
+          gitMessage.focus();
+          return;
+        }
+      }
+      if (gitAction === "init") payload.gitignore = gitIgnore.checked;
+      if (gitAction === "remote") {
+        payload.name = gitName.value.trim();
+        if (!payload.name) {
+          gitName.focus();
+          return;
+        }
+        var checked = shadow.querySelector('input[name="git-visibility"]:checked');
+        payload.visibility = checked ? checked.value : "private";
+      }
+
+      setGitBusy(true);
+      gitStatus.className = "git-status";
+      gitStatus.textContent = "Working…";
+      gitOutput.hidden = true;
+      gitOutput.textContent = "";
+
+      fetch("/__ribbon/git", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ribbon-Token": gitToken
+        },
+        body: JSON.stringify(payload)
+      })
+        .then(function (response) {
+          return response.json()
+            .catch(function () {
+              return { ok: false, error: "Unexpected response from the server." };
+            })
+            .then(function (data) {
+              data.statusCode = response.status;
+              return data;
+            });
+        })
+        .then(function (data) {
+          if (!data || !data.ok) {
+            setGitBusy(false);
+            showGitError(data);
+            return;
+          }
+          if (data.status) {
+            setGit(data.status);
+            if (currentApp()) currentApp().git = data.status;
+          }
+          var message = {
+            init: "Repository created and first commit made.",
+            commit: "Changes committed.",
+            push: "Commits pushed.",
+            remote: "GitHub repo created and pushed."
+          }[payload.action] || "Done.";
+          setGitBusy(false);
+          renderGitPanel(data.status || gitDetail, null, message);
+        })
+        .catch(function (error) {
+          setGitBusy(false);
+          showGitError({ error: error.message || "The request failed." });
+        });
+    }
+
     function setGit(git) {
+      currentGit = git || null;
       var repo = !!(git && git.repo);
       var state = (git && git.state) || "";
+      var dirty = !!(git && (git.dirty || (git.files && git.files.length)));
+      var count = git && typeof git.dirty_count === "number" ? git.dirty_count : dirty ? 1 : 0;
+      var hasRemote = !!(git && git.has_remote);
       var repoClass = repo ? "ok" : "off";
-      var syncClass = "off";
-      if (repo) {
-        if (state === "ahead") syncClass = "bad";
-        else if (state === "dirty" || state === "no-upstream" || state === "detached" || state === "no-commits") syncClass = "warn";
-        else if (state === "error") syncClass = "off";
-        else syncClass = "ok";
+      var changesClass = !repo ? "off" : dirty ? "warn" : "ok";
+      var remoteClass = "off";
+      if (repo && hasRemote) {
+        if (state === "ahead" || state === "diverged" || state === "conflicted") {
+          remoteClass = "bad";
+        } else if (
+          state === "behind" ||
+          state === "no-upstream" ||
+          state === "detached" ||
+          state === "no-commits"
+        ) {
+          remoteClass = "warn";
+        } else {
+          remoteClass = "ok";
+        }
       }
 
       ledRepo.className = "led " + repoClass;
-      ledSync.className = "led " + syncClass;
+      ledChanges.className = "led " + changesClass;
+      ledRemote.className = "led " + remoteClass;
       tipRepoDot.className = "led " + repoClass;
-      tipSyncDot.className = "led " + syncClass;
+      tipChangesDot.className = "led " + changesClass;
+      tipRemoteDot.className = "led " + remoteClass;
 
       var repoText = repoTip(git);
-      var syncText = gitTip(git);
+      var changesText = changesTip(git, dirty, count);
+      var remoteText = remoteTip(git, hasRemote);
       tipRepoText.textContent = repoText;
-      tipSyncText.textContent = syncText;
-      ledsButton.setAttribute("aria-label", repoText + ". " + syncText);
+      tipChangesText.textContent = changesText;
+      tipRemoteText.textContent = remoteText;
+      ledsWrap.setAttribute("aria-label", repoText + ". " + changesText + ". " + remoteText);
+
+      setLedLabel("repo", repoText, repo ? "Click for Git actions" : "Click to create a repository");
+      setLedLabel("changes", changesText, dirty ? "Click to commit" : "Nothing to commit");
+      setLedLabel(
+        "remote",
+        remoteText,
+        !hasRemote
+          ? "Click to create a remote"
+          : git && git.ahead
+            ? "Click to push"
+            : "Remote status"
+      );
+    }
+
+    function setLedLabel(name, text, hint) {
+      for (var i = 0; i < ledButtons.length; i += 1) {
+        if (ledButtons[i].getAttribute("data-led") === name) {
+          ledButtons[i].setAttribute("aria-label", text + ". " + hint);
+          ledButtons[i].title = text + " — " + hint;
+          return;
+        }
+      }
     }
 
     function repoTip(git) {
@@ -932,35 +1652,33 @@
       return "Git repository" + (git.branch ? " — " + git.branch : "");
     }
 
-    function gitTip(git) {
-      if (!git || !git.repo) return "No push status";
-      var bits = [];
-      if (git.state === "ahead") {
-        var count = git.ahead || 1;
-        bits.push(count + " commit" + (count === 1 ? "" : "s") + " not pushed");
-      } else if (git.state === "no-upstream") {
-        bits.push("No upstream branch");
-      } else if (git.state === "detached") {
-        bits.push("Detached HEAD");
-      } else if (git.state === "no-commits") {
-        bits.push("No commits yet");
-      } else if (git.state === "dirty") {
-        bits.push("Uncommitted changes");
-      } else if (git.state === "error") {
-        bits.push("Git status unavailable");
-      } else {
-        bits.push("All changes pushed");
+    function changesTip(git, dirty, count) {
+      if (!git || !git.repo) return "No changes to track";
+      if (dirty) {
+        var n = count || 1;
+        return n + " uncommitted file" + (n === 1 ? "" : "s");
       }
-      if (git.dirty && git.state !== "dirty") bits.push("uncommitted changes");
+      return git.state === "no-commits" ? "No commits yet" : "No uncommitted changes";
+    }
+
+    function remoteTip(git, hasRemote) {
+      if (!git || !git.repo) return "No remote";
+      if (!hasRemote) return "No remote";
+      if (git.state === "conflicted") return "Conflicts to resolve";
+      if (git.state === "no-commits") return "No commits yet";
+      if (git.state === "detached") return "Detached HEAD";
+      var bits = [];
+      if (git.ahead) bits.push(git.ahead + " to push");
       if (git.behind) bits.push(git.behind + " behind");
-      return bits.join(" · ");
+      if (bits.length) return bits.join(" · ");
+      if (git.state === "no-upstream") return "Remote set, no upstream";
+      return "Up to date" + (git.upstream ? " with " + git.upstream : "");
     }
 
     function openTip(pin) {
       if (pin) tipPinned = true;
       ledTip.classList.add("is-open");
       ledTip.setAttribute("aria-hidden", "false");
-      ledsButton.setAttribute("aria-expanded", "true");
       if (tipTimer) {
         clearTimeout(tipTimer);
         tipTimer = 0;
@@ -974,16 +1692,10 @@
       tipPinned = false;
       ledTip.classList.remove("is-open");
       ledTip.setAttribute("aria-hidden", "true");
-      ledsButton.setAttribute("aria-expanded", "false");
       if (tipTimer) {
         clearTimeout(tipTimer);
         tipTimer = 0;
       }
-    }
-
-    function toggleTip() {
-      if (ledTip.classList.contains("is-open") && tipPinned) closeTip();
-      else openTip(true);
     }
 
     function closeTipIfUnpinned() {
@@ -1065,18 +1777,37 @@
       closeMenu(false);
     }, true);
 
-    ledsButton.addEventListener("click", function (event) {
+    ledsWrap.addEventListener("click", function (event) {
+      var button = event.target && event.target.closest
+        ? event.target.closest(".led-btn")
+        : null;
+      if (!button) return;
       event.stopPropagation();
-      toggleTip();
+      openGitPanel(button.getAttribute("data-led"));
     });
-    ledsButton.addEventListener("pointerenter", function () {
+    ledsWrap.addEventListener("pointerenter", function () {
       if (hoverCapable) openTip(false);
     });
-    ledsButton.addEventListener("pointerleave", closeTipIfUnpinned);
-    ledsButton.addEventListener("focus", function () {
-      openTip(false);
+    ledsWrap.addEventListener("pointerleave", closeTipIfUnpinned);
+    for (var b = 0; b < ledButtons.length; b += 1) {
+      ledButtons[b].addEventListener("focus", function () {
+        openTip(false);
+      });
+      ledButtons[b].addEventListener("blur", closeTipIfUnpinned);
+    }
+
+    gitCancel.addEventListener("click", closeGitPanel);
+    gitClose.addEventListener("click", closeGitPanel);
+    gitPrimary.addEventListener("click", submitGitAction);
+    gitOverlay.addEventListener("pointerdown", function (event) {
+      if (event.target === gitOverlay) closeGitPanel();
     });
-    ledsButton.addEventListener("blur", closeTipIfUnpinned);
+    gitOverlay.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeGitPanel();
+      }
+    });
     document.addEventListener("pointerdown", function (event) {
       if (!ledTip.classList.contains("is-open")) return;
       var path = event.composedPath ? event.composedPath() : [];
@@ -1135,6 +1866,14 @@
       }
 
       var key = event.key;
+      if (!gitOverlay.hidden) {
+        if (key === "Escape") {
+          closeGitPanel();
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       if (key === "Escape" && menuOpen) {
         closeMenu(true);
         event.preventDefault();

@@ -23,6 +23,8 @@ import argparse
 import json
 import os
 import re
+import secrets
+import shutil
 import subprocess
 import threading
 import time
@@ -31,6 +33,7 @@ from functools import partial
 from html import unescape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import parse_qs, quote, urlsplit
 
 APP_DIR = Path(__file__).resolve().parent
@@ -40,18 +43,63 @@ STATE_LABELS = {
     "clean": "all pushed",
     "dirty": "unsaved changes",
     "ahead": "commits to push",
+    "behind": "behind the remote",
+    "diverged": "ahead and behind",
     "no-upstream": "not linked to a remote",
     "no-commits": "no commits yet",
     "detached": "detached HEAD",
+    "conflicted": "conflicts to resolve",
     "no-repo": "no git",
     "error": "git unavailable",
 }
+
+DEFAULT_GITIGNORE = """\
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+.cache/
+.next/
+.turbo/
+.parcel-cache/
+.DS_Store
+dist/
+build/
+out/
+target/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+"""
+
+SECRET_NAMES = {
+    ".env",
+    ".npmrc",
+    ".pypirc",
+    ".netrc",
+    "id_rsa",
+    "id_ed25519",
+    "credentials",
+    "credentials.json",
+}
+SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+LARGE_FILE_BYTES = 5 * 1024 * 1024
+MAX_ACTION_OUTPUT = 4000
+MAX_DETAIL_FILES = 200
 
 SKIP_DIRS = {
     "node_modules",
     "venv",
     "env",
+    ".venv",
     "__pycache__",
+    ".cache",
+    ".next",
+    ".turbo",
+    ".parcel-cache",
     "site-packages",
     "vendor",
     "bower_components",
@@ -100,7 +148,6 @@ def default_root() -> Path:
 
 TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 BODY_CLOSE_RE = re.compile(rb"</body\s*>", re.IGNORECASE)
-INJECT = b'<script src="/__ribbon/ribbon.js" data-ribbon="1" defer></script>'
 SHELL_MARKER = b"data-ribbon-shell"
 
 _cache: dict[str, object] = {"at": 0.0, "root": "", "apps": []}
@@ -141,22 +188,55 @@ def is_shell_page(path: Path) -> bool:
 GIT_CACHE: dict[str, tuple[float, dict]] = {}
 GIT_CACHE_SECONDS = 2.0
 
+GIT_LOCKS: dict[str, threading.Lock] = {}
+GIT_LOCKS_GUARD = threading.Lock()
+
+
+def repo_lock(path: Path) -> threading.Lock:
+    key = str(path.resolve())
+    with GIT_LOCKS_GUARD:
+        lock = GIT_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            GIT_LOCKS[key] = lock
+        return lock
+
+
+def _git(path: Path, args: list[str], timeout: float = 4) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return subprocess.run(
+        ["git", "-C", str(path), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        env=env,
+        check=False,
+    )
+
+
+def _git_text(path: Path, args: list[str], timeout: float = 4) -> str:
+    try:
+        proc = _git(path, args, timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
 
 def read_git_status(path: Path) -> dict:
     try:
-        proc = subprocess.run(
+        proc = _git(
+            path,
             [
-                "git",
-                "-C",
-                str(path),
+                "-c",
+                "core.quotePath=false",
                 "status",
                 "--porcelain=v1",
                 "--branch",
                 "--untracked-files=normal",
             ],
-            capture_output=True,
-            text=True,
-            timeout=4,
         )
     except (OSError, subprocess.TimeoutExpired):
         return {"repo": False, "state": "error"}
@@ -166,7 +246,8 @@ def read_git_status(path: Path) -> dict:
 
     lines = proc.stdout.splitlines()
     header = lines[0] if lines else ""
-    dirty = len(lines) > 1
+    file_lines = lines[1:]
+    dirty = bool(file_lines)
     info = header[3:] if header.startswith("## ") else ""
 
     counts = ""
@@ -196,19 +277,30 @@ def read_git_status(path: Path) -> dict:
         else:
             behind = int(match.group(2))
 
+    conflicted = any(line[:2] in {"UU", "AA", "DD", "AU", "UA", "DU", "UD"} for line in file_lines)
     gone = "gone" in counts
     if detached:
         state = "detached"
     elif no_commits:
         state = "no-commits"
-    elif ahead > 0:
+    elif conflicted:
+        state = "conflicted"
+    elif ahead and behind:
+        state = "diverged"
+    elif ahead:
         state = "ahead"
+    elif behind:
+        state = "behind"
     elif not upstream or gone:
         state = "no-upstream"
     elif dirty:
         state = "dirty"
     else:
         state = "clean"
+
+    remotes: list[str] = []
+    if not detached:
+        remotes = [line.strip() for line in _git_text(path, ["remote"]).splitlines() if line.strip()]
 
     return {
         "repo": True,
@@ -217,6 +309,10 @@ def read_git_status(path: Path) -> dict:
         "ahead": ahead,
         "behind": behind,
         "dirty": dirty,
+        "dirty_count": len(file_lines),
+        "conflicted": conflicted,
+        "has_remote": bool(remotes),
+        "remotes": remotes,
         "state": state,
     }
 
@@ -233,11 +329,362 @@ def git_status(path: Path, max_age: float = GIT_CACHE_SECONDS) -> dict:
     return status
 
 
+def list_folder_files(root: Path) -> list[dict]:
+    files: list[dict] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(
+            name
+            for name in dirnames
+            if name != ".git" and name not in SKIP_DIRS
+        )
+        for name in sorted(filenames):
+            rel = (Path(dirpath) / name).relative_to(root).as_posix()
+            files.append({"code": "?", "path": rel})
+            if len(files) >= MAX_DETAIL_FILES:
+                return files
+    return files
+
+
+def parse_status_files(output: str) -> list[dict]:
+    files: list[dict] = []
+    for line in output.splitlines():
+        if not line or line.startswith("## "):
+            continue
+        code = line[:2]
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        path = path.strip().strip('"')
+        if path:
+            files.append({"code": code, "path": path})
+        if len(files) >= MAX_DETAIL_FILES:
+            break
+    return files
+
+
+def file_warnings(root: Path, files: list[dict]) -> list[str]:
+    warnings: list[str] = []
+    if files and not (root / ".gitignore").is_file():
+        warnings.append("No .gitignore — generated folders may be committed.")
+
+    secrets_found: list[str] = []
+    large_found: list[str] = []
+    for item in files:
+        name = Path(item["path"]).name.lower()
+        likely_secret = (
+            name in SECRET_NAMES
+            or (name.startswith(".env.") and name not in {".env.example", ".env.sample", ".env.template"})
+            or name.endswith(SECRET_SUFFIXES)
+        )
+        if likely_secret:
+            secrets_found.append(item["path"])
+        try:
+            target = root / item["path"]
+            if target.is_file() and target.stat().st_size > LARGE_FILE_BYTES:
+                large_found.append(item["path"])
+        except OSError:
+            pass
+
+    if secrets_found:
+        warnings.append("Possible secrets: " + ", ".join(secrets_found[:5]))
+    if large_found:
+        warnings.append("Large files (over 5 MB): " + ", ".join(large_found[:5]))
+    return warnings
+
+
+def git_detail(path: Path) -> dict:
+    status = read_git_status(path)
+    GIT_CACHE[str(path.resolve())] = (time.monotonic(), status)
+    identity_ok = bool(_git_text(path, ["config", "user.name"])) and bool(
+        _git_text(path, ["config", "user.email"])
+    )
+    detail = {
+        **status,
+        "root": None,
+        "files": [],
+        "warnings": [],
+        "identity_ok": identity_ok,
+        "has_gitignore": (path / ".gitignore").is_file(),
+        "gh": bool(shutil.which("gh")),
+    }
+    if not status.get("repo"):
+        files = list_folder_files(path)
+        detail["root"] = str(path)
+        detail["files"] = files
+        detail["dirty_count"] = len(files)
+        detail["warnings"] = file_warnings(path, files)
+        return detail
+
+    root_text = _git_text(path, ["rev-parse", "--show-toplevel"])
+    root = Path(root_text) if root_text else path
+    files: list[dict] = []
+    try:
+        proc = _git(
+            root,
+            [
+                "-c",
+                "core.quotePath=false",
+                "status",
+                "--porcelain=v1",
+                "--branch",
+                "--untracked-files=normal",
+            ],
+            timeout=8,
+        )
+        if proc.returncode == 0:
+            files = parse_status_files(proc.stdout)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    detail["root"] = str(root)
+    detail["remote_url"] = _git_text(root, ["remote", "get-url", "origin"]) or None
+    detail["files"] = files
+    detail["dirty_count"] = len(files)
+    detail["warnings"] = file_warnings(root, files)
+    detail["has_gitignore"] = (root / ".gitignore").is_file()
+    detail["identity_ok"] = bool(_git_text(root, ["config", "user.name"])) and bool(
+        _git_text(root, ["config", "user.email"])
+    )
+    return detail
+
+
+def _action_error(message: str, output: str = "") -> dict:
+    return {"ok": False, "error": message, "output": output[-MAX_ACTION_OUTPUT:]}
+
+
+def _action_ok(output: str) -> dict:
+    return {"ok": True, "error": None, "output": output[-MAX_ACTION_OUTPUT:]}
+
+
+def _run_git_step(path: Path, args: list[str], timeout: float) -> tuple[bool, str]:
+    try:
+        proc = _git(path, args, timeout)
+    except subprocess.TimeoutExpired:
+        return False, "Git took too long and was stopped."
+    except OSError as exc:
+        return False, str(exc)
+    output = "\n".join(part for part in (proc.stdout, proc.stderr) if part).strip()
+    return proc.returncode == 0, output
+
+
+def _run_command(cmd: list[str], cwd: Path, timeout: float) -> tuple[bool, str]:
+    env = os.environ.copy()
+    env["GH_PROMPT_DISABLED"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "The command took too long and was stopped."
+    except OSError as exc:
+        return False, str(exc)
+    output = "\n".join(part for part in (proc.stdout, proc.stderr) if part).strip()
+    return proc.returncode == 0, output
+
+
+def _repo_root(path: Path) -> Path | None:
+    root = _git_text(path, ["rev-parse", "--show-toplevel"])
+    return Path(root) if root else None
+
+
+def _identity_problem(root: Path) -> str | None:
+    name = _git_text(root, ["config", "user.name"])
+    email = _git_text(root, ["config", "user.email"])
+    if name and email:
+        return None
+    return (
+        "Git needs your name and email first. Run:\n"
+        '  git config --global user.name "Your Name"\n'
+        '  git config --global user.email "you@example.com"'
+    )
+
+
+def _staged_count(root: Path) -> int:
+    text = _git_text(root, ["diff", "--cached", "--name-only"])
+    return len([line for line in text.splitlines() if line.strip()])
+
+
+def _clean_message(value: object, fallback: str) -> str:
+    text = str(value or "").strip()
+    return text[:2000] or fallback
+
+
+def git_init(target: Path, message: str, make_gitignore: bool) -> dict:
+    existing = _git_text(target, ["rev-parse", "--show-toplevel"])
+    if existing:
+        return _action_error(f"This folder is already inside a Git repository: {existing}")
+    message = _clean_message(message, "Initial commit")
+
+    ok, output = _run_git_step(target, ["init"], 30)
+    if not ok:
+        return _action_error("Could not create the repository.", output)
+
+    if make_gitignore and not (target / ".gitignore").exists():
+        try:
+            (target / ".gitignore").write_text(DEFAULT_GITIGNORE, encoding="utf-8")
+        except OSError as exc:
+            return _action_error(f"Could not write .gitignore: {exc}", output)
+
+    ok, add_output = _run_git_step(target, ["add", "-A"], 60)
+    output = "\n".join(part for part in (output, add_output) if part)
+    if not ok:
+        return _action_error("Could not stage the files.", output)
+    if _staged_count(target) == 0:
+        return _action_error("There are no files to commit.", output)
+
+    problem = _identity_problem(target)
+    if problem:
+        return _action_error(problem, output)
+
+    ok, commit_output = _run_git_step(target, ["commit", "-m", message], 60)
+    output = "\n".join(part for part in (output, commit_output) if part)
+    if not ok:
+        return _action_error("The initial commit failed.", output)
+    return _action_ok(output or "Created the repository and first commit.")
+
+
+def git_commit(target: Path, message: str) -> dict:
+    status = read_git_status(target)
+    if not status.get("repo"):
+        return _action_error("This folder is not a Git repository.")
+    if status.get("state") == "detached":
+        return _action_error("You are on a detached HEAD. Switch to a branch first.")
+    if status.get("conflicted"):
+        return _action_error("Resolve the merge conflicts before committing.")
+
+    root = _repo_root(target) or target
+    message = _clean_message(message, f"Update {target.name}")
+
+    ok, add_output = _run_git_step(root, ["add", "-A"], 60)
+    if not ok:
+        return _action_error("Could not stage the files.", add_output)
+    if _staged_count(root) == 0:
+        return _action_error("There are no changes to commit.", add_output)
+
+    problem = _identity_problem(root)
+    if problem:
+        return _action_error(problem, add_output)
+
+    ok, commit_output = _run_git_step(root, ["commit", "-m", message], 60)
+    if not ok:
+        return _action_error("The commit failed.", commit_output)
+    return _action_ok(commit_output or "Committed the changes.")
+
+
+def git_push(target: Path) -> dict:
+    status = read_git_status(target)
+    if not status.get("repo"):
+        return _action_error("This folder is not a Git repository.")
+    if status.get("state") == "detached":
+        return _action_error("You are on a detached HEAD. Switch to a branch first.")
+    if not status.get("has_remote"):
+        return _action_error("There is no remote. Create one first.")
+
+    root = _repo_root(target) or target
+    branch = _git_text(root, ["symbolic-ref", "--short", "-q", "HEAD"]) or status.get("branch")
+    if not branch or branch == "HEAD":
+        return _action_error("You are not on a branch.")
+
+    upstream = _git_text(
+        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+    )
+    if upstream:
+        ok, output = _run_git_step(root, ["push"], 120)
+    else:
+        remotes = status.get("remotes") or []
+        remote = "origin" if "origin" in remotes else remotes[0]
+        ok, output = _run_git_step(root, ["push", "-u", remote, branch], 120)
+
+    if not ok:
+        return _action_error("The push failed.", output)
+    return _action_ok(output or "Pushed the commits.")
+
+
+def git_create_remote(target: Path, name: str, visibility: str) -> dict:
+    status = read_git_status(target)
+    if not status.get("repo"):
+        return _action_error("This folder is not a Git repository.")
+    if status.get("state") == "detached":
+        return _action_error("You are on a detached HEAD. Switch to a branch first.")
+
+    root = _repo_root(target) or target
+    if not _git_text(root, ["rev-parse", "HEAD"]):
+        return _action_error("Make the first commit before creating a remote.")
+    if status.get("has_remote"):
+        return _action_error("This repository already has a remote.")
+    if not shutil.which("gh"):
+        return _action_error(
+            "GitHub CLI (gh) is not installed. Install it, or add a remote by hand."
+        )
+
+    ok, auth_output = _run_command(["gh", "auth", "status"], root, 20)
+    if not ok:
+        return _action_error("GitHub CLI is not logged in. Run: gh auth login", auth_output)
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", name):
+        return _action_error(
+            "Use a GitHub repo name with letters, numbers, dots, dashes, or underscores."
+        )
+    if visibility not in ("private", "public"):
+        return _action_error("Choose private or public visibility.")
+
+    flag = "--private" if visibility == "private" else "--public"
+    ok, output = _run_command(
+        [
+            "gh",
+            "repo",
+            "create",
+            name,
+            "--source",
+            ".",
+            "--remote",
+            "origin",
+            "--push",
+            flag,
+        ],
+        root,
+        180,
+    )
+    if not ok:
+        return _action_error("Creating the GitHub repo failed.", output)
+    return _action_ok(output or f"Created {name} and pushed the commits.")
+
+
+def run_git_action(action: str, target: Path, body: dict) -> dict:
+    if action == "init":
+        return git_init(
+            target,
+            _clean_message(body.get("message"), "Initial commit"),
+            bool(body.get("gitignore")),
+        )
+    if action == "commit":
+        return git_commit(target, _clean_message(body.get("message"), f"Update {target.name}"))
+    if action == "push":
+        return git_push(target)
+    if action == "remote":
+        return git_create_remote(
+            target,
+            str(body.get("name") or "").strip(),
+            str(body.get("visibility") or "private").lower(),
+        )
+    return _action_error("Unknown Git action.")
+
+
 def discover(
     root: Path,
     include_untitled: bool = False,
     with_git: bool = False,
     max_age: float = 1.0,
+    git_max_age: float = GIT_CACHE_SECONDS,
 ) -> list[dict]:
     """Every titled index.html under root, in stable path order."""
     now = time.monotonic()
@@ -280,7 +727,7 @@ def discover(
             "mtime": mtime,
         }
         if with_git:
-            app["git"] = git_status(page.parent)
+            app["git"] = git_status(page.parent, max_age=git_max_age)
 
         apps.append(app)
 
@@ -289,18 +736,28 @@ def discover(
     return apps
 
 
-def inject_html(data: bytes) -> bytes:
+def inject_html(data: bytes, token: str = "") -> bytes:
     if SHELL_MARKER in data or b"data-ribbon" in data or b"/__ribbon/ribbon.js" in data:
         return data
+    attrs = b' data-ribbon="1"'
+    if token:
+        attrs += b' data-ribbon-token="' + token.encode("utf-8") + b'"'
+    inject = b'<script src="/__ribbon/ribbon.js"' + attrs + b" defer></script>"
     matches = list(BODY_CLOSE_RE.finditer(data))
     if matches:
         index = matches[-1].start()
-        return data[:index] + INJECT + data[index:]
-    return data + INJECT
+        return data[:index] + inject + data[index:]
+    return data + inject
 
 
 def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
-    apps = discover(root, include_untitled=include_untitled, with_git=True, max_age=0)
+    apps = discover(
+        root,
+        include_untitled=include_untitled,
+        with_git=True,
+        max_age=0,
+        git_max_age=0,
+    )
     lines = [
         "/* Generated by _ribbon/ribbon.py --write-apps. Re-run after adding a folder. */",
         "window.__RIBBON_APPS__ = [",
@@ -311,8 +768,7 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
         ).replace(os.sep, "/")
         comma = "," if index < len(apps) - 1 else ""
         lines.append(
-            "  { url: %s, title: %s, dir: %s, git: %s }%s"
-            % (
+            "  {{ url: {}, title: {}, dir: {}, git: {} }}{}".format(
                 json.dumps(relative, ensure_ascii=False),
                 json.dumps(app["title"], ensure_ascii=False),
                 json.dumps(app["path"], ensure_ascii=False),
@@ -330,16 +786,118 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
 class RibbonHandler(SimpleHTTPRequestHandler):
     root: Path = APP_DIR.parent
     include_untitled: bool = False
+    token: str = ""
+    write_enabled: bool = False
+    allowed_origins: ClassVar[set[str]] = set()
 
     def log_message(self, fmt: str, *args) -> None:
         if getattr(self.server, "verbose", False):
             super().log_message(fmt, *args)
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         self._handle(head=False)
 
-    def do_HEAD(self) -> None:  # noqa: N802
+    def do_HEAD(self) -> None:
         self._handle(head=True)
+
+    def do_POST(self) -> None:
+        if urlsplit(self.path).path != "/__ribbon/git":
+            self.send_error(404, "Not found")
+            return
+
+        if not self.write_enabled:
+            self._send_json(
+                {
+                    "ok": False,
+                    "error": "Git actions are disabled. Start ribbon.py on 127.0.0.1 without --no-git-actions.",
+                },
+                403,
+            )
+            return
+
+        origin = self.headers.get("Origin")
+        if origin and origin not in self.allowed_origins:
+            self._send_json(
+                {"ok": False, "error": "This request did not come from the ribbon page."},
+                403,
+            )
+            return
+
+        content_type = (self.headers.get("Content-Type") or "").lower()
+        if not content_type.startswith("application/json"):
+            self._send_json({"ok": False, "error": "Expected JSON."}, 415)
+            return
+
+        token = self.headers.get("X-Ribbon-Token") or ""
+        if not secrets.compare_digest(token, self.token):
+            self._send_json(
+                {"ok": False, "error": "Missing or wrong ribbon token."}, 403
+            )
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            length = 0
+        if length <= 0 or length > 65536:
+            self._send_json({"ok": False, "error": "Bad request size."}, 400)
+            return
+
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._send_json({"ok": False, "error": "Bad JSON."}, 400)
+            return
+        if not isinstance(body, dict):
+            self._send_json({"ok": False, "error": "Bad request."}, 400)
+            return
+
+        requested = str(body.get("dir") or "")
+        try:
+            target = (self.root / requested).resolve()
+            target.relative_to(self.root.resolve())
+        except (OSError, ValueError):
+            self._send_json(
+                {"ok": False, "error": "That folder is outside the ribbon root."}, 400
+            )
+            return
+        if not target.is_dir():
+            self._send_json({"ok": False, "error": "That folder does not exist."}, 404)
+            return
+
+        action = str(body.get("action") or "")
+        lock = repo_lock(_repo_root(target) or target)
+        if not lock.acquire(blocking=False):
+            self._send_json(
+                {
+                    "ok": False,
+                    "error": "Another Git action is already running for this app.",
+                },
+                409,
+            )
+            return
+        try:
+            result = run_git_action(action, target, body)
+        finally:
+            lock.release()
+
+        GIT_CACHE.clear()
+        payload = {
+            **result,
+            "action": action,
+            "status": git_detail(target),
+            "write": self.write_enabled,
+        }
+        self._send_json(payload, 200 if result.get("ok") else 409)
+
+    def _send_json(self, payload: dict, status: int = 200) -> None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.end_headers()
+        self.wfile.write(data)
 
     def _handle(self, head: bool) -> None:
         raw_path = urlsplit(self.path).path
@@ -380,7 +938,8 @@ class RibbonHandler(SimpleHTTPRequestHandler):
 
     def _serve_html(self, target: Path, head: bool) -> None:
         try:
-            data = inject_html(target.read_bytes())
+            token = self.token if self.write_enabled else ""
+            data = inject_html(target.read_bytes(), token)
         except OSError:
             self.send_error(404, "File not found")
             return
@@ -402,7 +961,11 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                             self.root,
                             include_untitled=self.include_untitled,
                             with_git=True,
-                        )
+                            max_age=0,
+                            git_max_age=0,
+                        ),
+                        "token": self.token if self.write_enabled else "",
+                        "write": self.write_enabled,
                     },
                     ensure_ascii=False,
                 ).encode("utf-8")
@@ -422,7 +985,11 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                     self.send_error(404, "Not a folder")
                     return
                 payload = json.dumps(
-                    git_status(target), ensure_ascii=False
+                    {
+                        **git_detail(target),
+                        "write": self.write_enabled,
+                    },
+                    ensure_ascii=False,
                 ).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
             else:
@@ -491,6 +1058,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     server.add_argument("--no-open", action="store_true", help="don't launch a browser")
     server.add_argument("--verbose", action="store_true", help="log every request")
+    server.add_argument(
+        "--no-git-actions",
+        action="store_true",
+        help="show Git status but disable commit/push buttons",
+    )
 
     finding = parser.add_argument_group("finding apps")
     finding.add_argument(
@@ -571,6 +1143,7 @@ def main() -> None:
         include_untitled=args.include_untitled,
         with_git=args.list,
         max_age=0,
+        git_max_age=0,
     )
 
     if args.list:
@@ -605,6 +1178,20 @@ def main() -> None:
     chosen_port = httpd.server_address[1]
     host_for_url = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     base = f"http://{host_for_url}:{chosen_port}/"
+
+    write_enabled = (not args.no_git_actions) and args.host in (
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    )
+    RibbonHandler.write_enabled = write_enabled
+    RibbonHandler.token = secrets.token_urlsafe(24) if write_enabled else ""
+    origins = {base.rstrip("/")}
+    if args.host in ("127.0.0.1", "localhost"):
+        origins.add(f"http://127.0.0.1:{chosen_port}")
+        origins.add(f"http://localhost:{chosen_port}")
+    RibbonHandler.allowed_origins = origins
+
     if args.app is not None:
         launch = base + apps[args.app - 1]["url"].lstrip("/")
     else:
@@ -617,6 +1204,11 @@ def main() -> None:
     print(f"  open    {launch}")
     if args.port != 0 and chosen_port != args.port:
         print(f"  note    port {args.port} was busy, using {chosen_port}")
+    if write_enabled:
+        print("  git     actions enabled (commit, push, GitHub)")
+    else:
+        print("  git     read-only")
+        print("  note    start on 127.0.0.1 to enable Git actions")
     shell = static_shell_url(base, root)
     if shell:
         print(f"  shell   {shell}")

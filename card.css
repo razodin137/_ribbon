@@ -1,0 +1,244 @@
+:root {
+  --rc-ink: #eee9dc;
+  --rc-muted: #979284;
+  --rc-line: rgba(255, 255, 255, .13);
+  --rc-accent: #d0a64a;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  margin: 0;
+  padding: 40px 20px 64px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(208, 166, 74, .1), transparent 46%),
+    #101210;
+  color: var(--rc-ink);
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.rc-card {
+  position: relative;
+  width: min(640px, 100%);
+  padding: 30px 32px 24px;
+  overflow: hidden;
+  border: 1px solid var(--rc-line);
+  border-radius: 14px;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, .055), transparent 44%),
+    #171916;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, .42),
+    inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+
+.rc-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--rc-accent);
+}
+
+.rc-glow {
+  position: absolute;
+  top: -120px;
+  left: -80px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: var(--rc-accent);
+  opacity: .13;
+  filter: blur(70px);
+  pointer-events: none;
+}
+
+.rc-head {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.rc-glyph {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border: 1px solid var(--rc-accent);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .03);
+  color: var(--rc-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  box-shadow: 0 0 24px rgba(208, 166, 74, .14);
+}
+
+.rc-titles {
+  min-width: 0;
+}
+
+.rc-kicker {
+  margin: 0 0 2px;
+  color: var(--rc-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.rc-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  line-height: 1.2;
+}
+
+.rc-desc {
+  position: relative;
+  margin: 20px 0 0;
+  color: #cbc6b7;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.rc-meta {
+  display: flex;
+  gap: 28px;
+  margin: 22px 0 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--rc-line);
+  border-bottom: 1px solid var(--rc-line);
+}
+
+.rc-meta div {
+  min-width: 0;
+}
+
+.rc-meta dt {
+  color: var(--rc-muted);
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.rc-meta dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-block {
+  margin: 22px 0 0;
+}
+
+.rc-label {
+  margin: 0 0 8px;
+  color: var(--rc-muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.rc-run {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid var(--rc-line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .34);
+  color: #f0d79b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.rc-run::before {
+  content: "$ ";
+  color: var(--rc-muted);
+}
+
+.rc-files-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rc-file {
+  overflow: hidden;
+  padding: 3px 0;
+  color: #c3bda9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-file.is-folder {
+  color: var(--rc-accent);
+}
+
+.rc-file.is-folder::before {
+  content: "▸ ";
+  opacity: .65;
+}
+
+.rc-empty {
+  margin: 0;
+  color: var(--rc-muted);
+  font-size: 12px;
+}
+
+.rc-foot {
+  margin-top: 26px;
+  color: #6d685c;
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+@media (max-width: 520px) {
+  body {
+    padding: 20px 12px 48px;
+  }
+
+  .rc-card {
+    padding: 24px 22px 20px;
+  }
+
+  .rc-title {
+    font-size: 20px;
+  }
+
+  .rc-files-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -434,6 +434,22 @@
 
   .menu-row.is-current .menu-app-title { color: #f6e5b4; }
 
+  .menu-app-glyph {
+    display: inline-grid;
+    place-items: center;
+    min-width: 22px;
+    height: 15px;
+    margin-right: 7px;
+    padding: 0 4px;
+    border: 1px solid currentcolor;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    vertical-align: 1px;
+  }
+
   .menu-app-dir {
     display: block;
     width: 100%;
@@ -1058,6 +1074,7 @@
   </div>
 
   <script src="apps.js"></script>
+  <script src="card.js"></script>
   <script src="shell.js"></script>
 </body>
 </html>

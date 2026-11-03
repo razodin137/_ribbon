@@ -20,6 +20,7 @@ Handy first commands:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -30,14 +31,17 @@ import threading
 import time
 import webbrowser
 from functools import partial
-from html import unescape
+from html import escape, unescape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 APP_DIR = Path(__file__).resolve().parent
-VERSION = "1.1.0"
+VERSION = "1.2.0"
+HTML_SUFFIXES = (".html", ".htm")
+CARD_ROUTE = "/__ribbon/card/"
+PREFERRED_HTML = ("index.html", "app.html", "main.html", "home.html", "site.html", "start.html")
 
 STATE_LABELS = {
     "clean": "all pushed",
@@ -112,7 +116,7 @@ SKIP_DIRS = {
 
 
 def app_child_count(path: Path) -> int:
-    """How many direct child folders have an index.html."""
+    """How many direct child folders Ribbon would list."""
     try:
         entries = list(path.iterdir())
     except OSError:
@@ -125,7 +129,7 @@ def app_child_count(path: Path) -> int:
             entry.is_dir()
             and not entry.name.startswith(".")
             and entry.name not in SKIP_DIRS
-            and (entry / "index.html").is_file()
+            and is_app_folder(entry)
         ):
             count += 1
     return count
@@ -175,6 +179,187 @@ def extract_title(path: Path) -> str:
         return ""
     match = TITLE_RE.search(head)
     return clean_title(match.group(1)) if match else ""
+
+
+def choose_html(filenames: list[str] | set[str]) -> str | None:
+    """Pick the page a folder should open, preferring index.html."""
+    names = {name for name in filenames if Path(name).suffix.lower() in HTML_SUFFIXES}
+    for preferred in PREFERRED_HTML:
+        if preferred in names:
+            return preferred
+    if not names:
+        return None
+    return sorted(names, key=str.lower)[0]
+
+
+def read_readme(path: Path) -> str:
+    for name in ("README.md", "readme.md", "README.markdown", "README.txt", "README"):
+        candidate = path / name
+        if candidate.is_file():
+            try:
+                return candidate.read_text(encoding="utf-8", errors="replace")[:12000]
+            except OSError:
+                continue
+    return ""
+
+
+def clean_markdown(text: str) -> str:
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[*_`>#|]", "", text)
+    return " ".join(unescape(text).split())[:220]
+
+
+def readme_summary(path: Path) -> tuple[str, str]:
+    text = read_readme(path)
+    if not text:
+        return "", ""
+    title = ""
+    lines: list[str] = []
+    started = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not title and line.startswith("#"):
+            title = clean_markdown(line.lstrip("#").strip())
+            continue
+        if not line:
+            if started:
+                break
+            continue
+        if line.startswith(("```", "~~~", "|", "---", "<", "![")):
+            if started:
+                break
+            continue
+        lines.append(line)
+        started = True
+        if len(" ".join(lines)) > 220:
+            break
+    return title, clean_markdown(" ".join(lines))
+
+
+def project_kind(path: Path, filenames: list[str]) -> dict | None:
+    """Guess what kind of non-web project a folder holds."""
+    names = {name.lower(): name for name in filenames}
+    files = sorted(name for name in filenames if not name.startswith("."))
+    py_files = sorted(name for name in files if name.lower().endswith(".py"))
+    js_files = sorted(
+        name
+        for name in files
+        if name.lower().endswith((".js", ".mjs", ".cjs", ".ts"))
+    )
+    sh_files = sorted(name for name in files if name.lower().endswith(".sh"))
+
+    def pick(*candidates: str) -> str | None:
+        for candidate in candidates:
+            if candidate.lower() in names:
+                return names[candidate.lower()]
+        return None
+
+    if "cargo.toml" in names:
+        return {"type": "Rust", "icon": "RS", "run": "cargo run"}
+    if "go.mod" in names:
+        return {"type": "Go", "icon": "GO", "run": "go run ."}
+    if "package.json" in names:
+        run = "npm start"
+        try:
+            data = json.loads((path / names["package.json"]).read_text(encoding="utf-8"))
+            scripts = data.get("scripts") if isinstance(data, dict) else None
+            if isinstance(scripts, dict):
+                if "start" not in scripts and "dev" in scripts:
+                    run = "npm run dev"
+        except (OSError, ValueError):
+            pass
+        return {"type": "Node", "icon": "JS", "run": run}
+    if pick("pyproject.toml", "requirements.txt", "setup.py", "main.py", "manage.py") or py_files:
+        entry = pick("main.py", "app.py", "cli.py", "__main__.py") or (
+            py_files[0] if py_files else ""
+        )
+        run = f"python3 {entry}" if entry else "python3 ."
+        return {"type": "Python", "icon": "PY", "run": run}
+    if "gemfile" in names:
+        return {"type": "Ruby", "icon": "RB", "run": "bundle install"}
+    if pick("makefile", "makefile.am", "justfile"):
+        return {"type": "Make", "icon": "MK", "run": "make"}
+    if pick("dockerfile", "docker-compose.yml", "compose.yml", "compose.yaml"):
+        return {"type": "Docker", "icon": "DK", "run": "docker compose up"}
+    if sh_files:
+        entry = pick("run.sh", "start.sh", "main.sh") or sh_files[0]
+        return {"type": "Shell", "icon": "SH", "run": f"./{entry}"}
+    if js_files:
+        entry = pick("index.js", "main.js", "server.js", "app.js") or js_files[0]
+        return {"type": "Node", "icon": "JS", "run": f"node {entry}"}
+    if pick("readme.md", "readme.markdown", "readme.txt", "readme"):
+        return {"type": "Project", "icon": "MD", "run": ""}
+    return None
+
+
+def folder_entries(path: Path) -> list[str]:
+    entries: list[str] = []
+    try:
+        children = sorted(path.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+    except OSError:
+        return entries
+    for child in children:
+        if child.name.startswith(".") or child.is_symlink():
+            continue
+        if child.is_dir():
+            if child.name in SKIP_DIRS:
+                continue
+            entries.append(child.name + "/")
+        else:
+            entries.append(child.name)
+        if len(entries) >= 14:
+            break
+    return entries
+
+
+def accent_color(rel_dir: str) -> str:
+    digest = hashlib.sha1(rel_dir.encode("utf-8")).digest()
+    hue = digest[0] * 360 // 256
+    return f"hsl({hue} 46% 62%)"
+
+
+def project_info(path: Path, rel_dir: str) -> dict | None:
+    try:
+        filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
+    except OSError:
+        return None
+    kind = project_kind(path, filenames)
+    if not kind:
+        return None
+    title, description = readme_summary(path)
+    return {
+        "kind": "project",
+        "title": title or fallback_title(rel_dir),
+        "description": description,
+        "type": kind["type"],
+        "icon": kind["icon"],
+        "run": kind["run"],
+        "files": folder_entries(path),
+        "color": accent_color(rel_dir),
+    }
+
+
+def has_git_ancestor(path: Path, root: Path) -> bool:
+    """True when a parent folder between path and root is a Git repository."""
+    parent = path.parent
+    while parent != root and parent != parent.parent:
+        if (parent / ".git").exists():
+            return True
+        parent = parent.parent
+    return False
+
+
+def is_app_folder(path: Path) -> bool:
+    try:
+        filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
+    except OSError:
+        return False
+    html = choose_html(filenames)
+    if html:
+        return not is_shell_page(path / html)
+    return project_kind(path, filenames) is not None
 
 
 def is_shell_page(path: Path) -> bool:
@@ -413,6 +598,7 @@ def git_detail(path: Path) -> dict:
         detail["files"] = files
         detail["dirty_count"] = len(files)
         detail["warnings"] = file_warnings(path, files)
+        detail["pages"] = pages_state(path)
         return detail
 
     root_text = _git_text(path, ["rev-parse", "--show-toplevel"])
@@ -445,6 +631,7 @@ def git_detail(path: Path) -> dict:
     detail["identity_ok"] = bool(_git_text(root, ["config", "user.name"])) and bool(
         _git_text(root, ["config", "user.email"])
     )
+    detail["pages"] = pages_state(root)
     return detail
 
 
@@ -625,6 +812,67 @@ def _github_pages_url(owner: str, name: str) -> str:
     return f"https://{owner_lower}.github.io/{name_lower}/"
 
 
+def pages_state(path: Path) -> dict:
+    try:
+        names = [entry.name for entry in path.iterdir() if entry.is_file()]
+    except OSError:
+        names = []
+    return {
+        "index": (path / "index.html").is_file(),
+        "entry": choose_html(names),
+    }
+
+
+def pages_requirement(root: Path) -> str | None:
+    if (root / "index.html").is_file():
+        return None
+    entry = pages_state(root)["entry"]
+    if entry:
+        return (
+            "GitHub Pages needs an index.html at the repository root. "
+            f"This repo's page is {entry}. Rename it to index.html, or "
+            "create an index.html that opens it."
+        )
+    return (
+        "GitHub Pages needs an index.html at the repository root. "
+        "Add one, then publish again."
+    )
+
+
+def git_create_pages_entry(target: Path) -> dict:
+    root = _repo_root(target) or target
+    if (root / "index.html").is_file():
+        return _action_error("This repository already has an index.html.")
+    try:
+        names = [entry.name for entry in root.iterdir() if entry.is_file()]
+    except OSError as exc:
+        return _action_error(f"Could not read the repository folder: {exc}")
+    entry = choose_html(names)
+    if not entry:
+        return _action_error(
+            "No HTML page was found. Add one first, then create the Pages entry."
+        )
+    href = quote(entry)
+    page = (
+        "<!doctype html>\n"
+        '<html lang="en">\n'
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        f'<meta http-equiv="refresh" content="0; url={href}">\n'
+        f"<title>{escape(Path(entry).stem)}</title>\n"
+        "</head>\n"
+        "<body>\n"
+        f'<p><a href="{href}">Open {escape(entry)}</a></p>\n'
+        "</body>\n"
+        "</html>\n"
+    )
+    try:
+        (root / "index.html").write_text(page, encoding="utf-8")
+    except OSError as exc:
+        return _action_error(f"Could not write index.html: {exc}")
+    return _action_ok(f"Created index.html, which opens {entry}.")
+
+
 def _enable_github_pages(
     root: Path, owner: str, name: str, branch: str
 ) -> tuple[bool, str]:
@@ -733,6 +981,11 @@ def git_create_remote(
         )
         return result
 
+    missing = pages_requirement(root)
+    if missing:
+        result["pages_error"] = missing
+        return result
+
     ok, pages_output = _enable_github_pages(root, owner, repo, branch)
     if not ok:
         result["pages_error"] = "GitHub Pages could not be enabled.\n" + pages_output
@@ -777,6 +1030,10 @@ def git_enable_pages(target: Path) -> dict:
     if not branch or branch == "HEAD":
         return _action_error("You are not on a branch.")
 
+    missing = pages_requirement(root)
+    if missing:
+        return _action_error(missing)
+
     ok, output = _enable_github_pages(root, owner, repo, branch)
     if not ok:
         return _action_error("GitHub Pages could not be enabled.", output)
@@ -806,6 +1063,8 @@ def run_git_action(action: str, target: Path, body: dict) -> dict:
         return git_push(target)
     if action == "pages":
         return git_enable_pages(target)
+    if action == "pages-entry":
+        return git_create_pages_entry(target)
     if action == "remote":
         return git_create_remote(
             target,
@@ -824,7 +1083,7 @@ def discover(
     max_age: float = 1.0,
     git_max_age: float = GIT_CACHE_SECONDS,
 ) -> list[dict]:
-    """Every titled index.html under root, in stable path order."""
+    """Every page or project folder under root, in stable path order."""
     now = time.monotonic()
     cache_key = f"{root}|{int(include_untitled)}|{int(with_git)}"
     if (
@@ -835,38 +1094,69 @@ def discover(
 
     apps: list[dict] = []
     for dirpath, dirnames, filenames in os.walk(root):
+        directory = Path(dirpath)
         dirnames[:] = sorted(
-            d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
+            d
+            for d in dirnames
+            if d not in SKIP_DIRS
+            and not d.startswith(".")
+            and directory / d != APP_DIR
         )
-        if "index.html" not in filenames:
+        if directory == APP_DIR:
             continue
 
-        page = Path(dirpath) / "index.html"
-        if is_shell_page(page):
+        html = choose_html(filenames)
+        page = directory / html if html else None
+        if page is not None and is_shell_page(page):
             continue
 
-        title = extract_title(page)
-        if not title and not include_untitled:
+        if page is not None:
+            title = extract_title(page)
+            if not title and not include_untitled:
+                continue
+            rel_dir = page.parent.relative_to(root).as_posix()
+            rel_file = page.relative_to(root).as_posix()
+            if rel_dir == ".":
+                url = "/" if page.name == "index.html" else "/" + quote(page.name)
+            else:
+                url = "/" + quote(rel_dir, safe="/") + "/"
+                if page.name != "index.html":
+                    url += quote(page.name)
+            try:
+                mtime = int(page.stat().st_mtime)
+            except OSError:
+                mtime = 0
+            app = {
+                "kind": "page",
+                "url": url,
+                "file": "/" + quote(rel_file, safe="/"),
+                "path": rel_dir,
+                "title": title or fallback_title(rel_dir),
+                "mtime": mtime,
+                "color": accent_color(rel_dir),
+            }
+            if with_git:
+                app["git"] = git_status(directory, max_age=git_max_age)
+            apps.append(app)
             continue
 
-        rel_dir = page.parent.relative_to(root).as_posix()
-        rel_file = page.relative_to(root).as_posix()
-        url = "/" if rel_dir == "." else "/" + quote(rel_dir, safe="/") + "/"
+        info = project_info(directory, directory.relative_to(root).as_posix())
+        if not info or has_git_ancestor(directory, root):
+            continue
         try:
-            mtime = int(page.stat().st_mtime)
+            mtime = int(directory.stat().st_mtime)
         except OSError:
             mtime = 0
-
+        rel_dir = directory.relative_to(root).as_posix()
         app = {
-            "url": url,
-            "file": "/" + quote(rel_file, safe="/"),
+            **info,
+            "url": CARD_ROUTE + (quote(rel_dir, safe="/") + "/" if rel_dir != "." else ""),
+            "file": "",
             "path": rel_dir,
-            "title": title or fallback_title(rel_dir),
             "mtime": mtime,
         }
         if with_git:
-            app["git"] = git_status(page.parent, max_age=git_max_age)
-
+            app["git"] = git_status(directory, max_age=git_max_age)
         apps.append(app)
 
     apps.sort(key=lambda app: app["path"].lower())
@@ -888,6 +1178,19 @@ def inject_html(data: bytes, token: str = "") -> bytes:
     return data + inject
 
 
+def js_literal(value: object) -> str:
+    if isinstance(value, dict):
+        return "{" + ", ".join(
+            json.dumps(str(key), ensure_ascii=False) + ": " + js_literal(item)
+            for key, item in value.items()
+        ) + "}"
+    if isinstance(value, list):
+        if not value:
+            return "[]"
+        return "[ " + ", ".join(js_literal(item) for item in value) + " ]"
+    return json.dumps(value, ensure_ascii=False)
+
+
 def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
     apps = discover(
         root,
@@ -901,20 +1204,28 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
         "window.__RIBBON_APPS__ = [",
     ]
     for index, app in enumerate(apps):
-        relative = os.path.relpath(
-            root / app["file"].lstrip("/"), APP_DIR
-        ).replace(os.sep, "/")
+        if app["kind"] == "project":
+            url = "project:" + app["path"]
+        else:
+            url = os.path.relpath(
+                root / app["file"].lstrip("/"), APP_DIR
+            ).replace(os.sep, "/")
+        fields = [
+            "url: " + json.dumps(url, ensure_ascii=False),
+            "title: " + json.dumps(app["title"], ensure_ascii=False),
+            "dir: " + json.dumps(app["path"], ensure_ascii=False),
+            "kind: " + json.dumps(app["kind"], ensure_ascii=False),
+        ]
+        for key in ("type", "icon", "description", "run", "color"):
+            if app.get(key):
+                fields.append(key + ": " + json.dumps(app[key], ensure_ascii=False))
+        fields.append("mtime: " + str(int(app.get("mtime") or 0)))
+        if app.get("files"):
+            fields.append("files: " + js_literal(app["files"]))
+        fields.append("git: " + js_literal(app["git"]))
         comma = "," if index < len(apps) - 1 else ""
-        lines.append(
-            "  {{ url: {}, title: {}, dir: {}, git: {} }}{}".format(
-                json.dumps(relative, ensure_ascii=False),
-                json.dumps(app["title"], ensure_ascii=False),
-                json.dumps(app["path"], ensure_ascii=False),
-                json.dumps(app["git"], ensure_ascii=False),
-                comma,
-            )
-        )
-    lines.append("];")
+        lines.append("  { " + ", ".join(fields) + " }" + comma)
+    lines.append("]")
 
     target = APP_DIR / "apps.js"
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1040,6 +1351,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
     def _handle(self, head: bool) -> None:
         raw_path = urlsplit(self.path).path
 
+        if raw_path.startswith(CARD_ROUTE):
+            return self._serve_card(raw_path, head)
+
         if raw_path.startswith("/__ribbon/"):
             return self._serve_asset(raw_path[len("/__ribbon/") :], head)
 
@@ -1064,7 +1378,22 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                 self.send_header("Location", raw_path + "/")
                 self.end_headers()
                 return
-            target = target / "index.html"
+            index = target / "index.html"
+            if not index.is_file():
+                try:
+                    names = [entry.name for entry in target.iterdir() if entry.is_file()]
+                except OSError:
+                    names = []
+                html = choose_html(names)
+                if html:
+                    index = target / html
+                elif project_kind(target, names):
+                    rel = target.relative_to(self.root.resolve()).as_posix()
+                    return self._serve_card(
+                        CARD_ROUTE + (quote(rel, safe="/") + "/" if rel != "." else ""),
+                        head,
+                    )
+            target = index
 
         if target.is_file() and target.suffix.lower() in (".html", ".htm"):
             return self._serve_html(target, head)
@@ -1090,6 +1419,57 @@ class RibbonHandler(SimpleHTTPRequestHandler):
         if not head:
             self.wfile.write(data)
 
+    def _serve_card(self, raw_path: str, head: bool) -> None:
+        rel = unquote(raw_path[len(CARD_ROUTE) :]).strip("/")
+        rel = rel or "."
+        try:
+            target = (self.root / rel).resolve()
+            target.relative_to(self.root.resolve())
+        except (OSError, ValueError):
+            self.send_error(400, "Bad folder")
+            return
+        if not target.is_dir():
+            self.send_error(404, "Not a folder")
+            return
+
+        rel_dir = target.relative_to(self.root.resolve()).as_posix()
+        info = project_info(target, rel_dir)
+        if not info:
+            self.send_error(404, "No project here")
+            return
+        info["path"] = rel_dir
+        try:
+            info["mtime"] = int(target.stat().st_mtime)
+        except OSError:
+            info["mtime"] = 0
+
+        data = json.dumps(info, ensure_ascii=False).replace("</", "<\\/")
+        doc = (
+            "<!doctype html>\n"
+            '<html lang="en">\n'
+            "<head>\n"
+            '<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            f"<title>{escape(info['title'])}</title>\n"
+            '<link rel="stylesheet" href="/__ribbon/card.css">\n'
+            f"<script>window.__RIBBON_CARD_APP__ = {data};</script>\n"
+            '<script src="/__ribbon/card.js" defer></script>\n'
+            "</head>\n"
+            "<body>\n"
+            '<div id="ribbon-card"></div>\n'
+            "</body>\n"
+            "</html>\n"
+        ).encode("utf-8")
+        payload = inject_html(doc, self.token if self.write_enabled else "")
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.end_headers()
+        if not head:
+            self.wfile.write(payload)
+
     def _serve_asset(self, name: str, head: bool) -> None:
         try:
             if name == "manifest.json":
@@ -1111,6 +1491,12 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             elif name == "ribbon.js":
                 payload = (APP_DIR / "ribbon.js").read_bytes()
                 content_type = "text/javascript; charset=utf-8"
+            elif name == "card.js":
+                payload = (APP_DIR / "card.js").read_bytes()
+                content_type = "text/javascript; charset=utf-8"
+            elif name == "card.css":
+                payload = (APP_DIR / "card.css").read_bytes()
+                content_type = "text/css; charset=utf-8"
             elif name == "git.json":
                 requested = (parse_qs(urlsplit(self.path).query).get("dir") or [""])[0]
                 try:
@@ -1161,7 +1547,7 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "Ribbon looks for the folder that holds your apps: beside this script\n"
             "first, then one level further up. Use --root to point it anywhere.\n"
-            "It lists folders that contain an index.html with a <title>."
+            "It lists folders with an HTML page (index.html preferred) or a project."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
@@ -1232,7 +1618,8 @@ def print_apps(root: Path, apps: list[dict]) -> None:
 
 def print_no_apps(root: Path, include_untitled: bool) -> None:
     print(f"\n  No apps found in {root}\n")
-    print("  Ribbon lists folders that have an index.html with a <title>.")
+    print("  Ribbon lists folders with an HTML page (index.html preferred)")
+    print("  or a project folder with a README, script, or build file.")
     if not include_untitled:
         print("  Pages without a title are skipped by default:\n")
         print("    python3 ribbon.py --list --include-untitled\n")

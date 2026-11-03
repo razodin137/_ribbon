@@ -375,6 +375,21 @@
       font-size: 12.5px;
     }
     .menu-row.is-current .menu-app-title { color: #f6e5b4; }
+    .menu-app-glyph {
+      display: inline-grid;
+      place-items: center;
+      min-width: 22px;
+      height: 15px;
+      margin-right: 7px;
+      padding: 0 4px;
+      border: 1px solid currentcolor;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: .03em;
+      vertical-align: 1px;
+    }
     .menu-app-dir {
       display: block;
       width: 100%;
@@ -1196,7 +1211,15 @@
 
       const title = document.createElement("span")
       title.className = "menu-app-title"
-      title.textContent = app.title || "Untitled"
+      if (app.kind === "project" && app.icon) {
+        const glyph = document.createElement("span")
+        glyph.className = "menu-app-glyph"
+        glyph.textContent = app.icon
+        glyph.setAttribute("aria-hidden", "true")
+        if (app.color) glyph.style.color = app.color
+        title.appendChild(glyph)
+      }
+      title.appendChild(document.createTextNode(app.title || "Untitled"))
 
       const path = app.path || app.dir || ""
       const dir = document.createElement("span")
@@ -1229,7 +1252,8 @@
     function matchesQuery(app, query) {
       if (!query) return true
       const haystack = String(app.title || "").toLowerCase() +
-        " " + String(app.path || app.dir || "").toLowerCase()
+        " " + String(app.path || app.dir || "").toLowerCase() +
+        " " + String(app.type || "").toLowerCase()
       return haystack.indexOf(query) !== -1
     }
 
@@ -1393,6 +1417,9 @@
       gitDetail = detail
       gitAction = decideGitAction(detail, focus)
       gitBlocked = false
+      if (gitAction === "pages" && detail.pages && !detail.pages.index) {
+        gitAction = "pages-entry"
+      }
 
       const app = currentApp()
       const titles = {
@@ -1401,6 +1428,7 @@
         push: "Push commits",
         remote: "Create a GitHub remote",
         pages: "Publish to GitHub Pages",
+        "pages-entry": "GitHub Pages needs an index.html",
         info: "Git status"
       }
       const labels = {
@@ -1408,7 +1436,8 @@
         commit: "Commit changes",
         push: "Push commits",
         remote: "Create repo + push",
-        pages: "Publish to GitHub Pages"
+        pages: "Publish to GitHub Pages",
+        "pages-entry": "Create index.html"
       }
       gitTitle.textContent = titles[gitAction] || "Git status"
 
@@ -1514,6 +1543,15 @@
       if (gitAction === "pages" && detail.gh === false) {
         notes.push("GitHub CLI (gh) is not installed. Install it to publish with Pages.")
       }
+      if (gitAction === "pages-entry") {
+        const entry = detail.pages && detail.pages.entry
+        notes.push(
+          "GitHub Pages only serves an index.html at the repository root." +
+          (entry
+            ? " Ribbon will create one that opens " + entry + "."
+            : " Add an HTML page first.")
+        )
+      }
       if (gitAction === "pages") {
         notes.push("This enables GitHub Pages for the current branch and sets the Pages address as the repo homepage.")
       }
@@ -1535,7 +1573,8 @@
       gitBlocked =
         !canWrite ||
         detail.identity_ok === false && (gitAction === "commit" || gitAction === "init") ||
-        (gitAction === "remote" || gitAction === "pages") && detail.gh === false
+        (gitAction === "remote" || gitAction === "pages") && detail.gh === false ||
+        gitAction === "pages-entry" && !(detail.pages && detail.pages.entry)
       gitPrimary.textContent = labels[gitAction] || ""
       gitPrimary.hidden = !labels[gitAction]
       gitPrimary.disabled = gitBlocked
@@ -1545,7 +1584,7 @@
 
       if (gitAction === "commit" || gitAction === "init") gitMessage.focus()
       else if (gitAction === "remote") gitName.focus()
-      else if (gitAction === "push" || gitAction === "pages") gitPrimary.focus()
+      else if (gitAction === "push" || gitAction === "pages" || gitAction === "pages-entry") gitPrimary.focus()
       else gitCancel.focus()
     }
 
@@ -1621,7 +1660,8 @@
           commit: "Commit changes",
           push: "Push commits",
           remote: "Create repo + push",
-          pages: "Publish to GitHub Pages"
+          pages: "Publish to GitHub Pages",
+          "pages-entry": "Create index.html"
         }
         gitPrimary.textContent = labels[gitAction] || "Continue"
       }
@@ -1701,7 +1741,8 @@
             commit: "Changes committed.",
             push: "Commits pushed.",
             remote: "GitHub repo created and pushed.",
-            pages: "GitHub Pages is on."
+            pages: "GitHub Pages is on.",
+            "pages-entry": "Created index.html. Commit and push it, then publish again."
           }[payload.action] || "Done."
           let extra = ""
           if (payload.action === "remote" || payload.action === "pages") {

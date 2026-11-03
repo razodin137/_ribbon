@@ -76,12 +76,21 @@ version and the no-server version.
 ## Add a new app
 
 1. Make a folder inside your apps folder.
-2. Put a file called `index.html` inside it.
+2. Put a page inside it. `index.html` is the usual name.
 3. Give the page a name, like this:
 
 ```html
 <title>My Cool App</title>
 ```
+
+Ribbon also opens any other `.html` file in the folder, so `app.html` or
+`landing.html` works for local viewing. If there are several, `index.html`
+wins, then names like `app.html`, `main.html`, and `home.html`, then the
+alphabetical first one.
+
+GitHub Pages is stricter: it only serves an `index.html` at the repository
+root. When you publish a folder that has a different page name, Ribbon
+offers to create an `index.html` that opens it. Your page keeps its name.
 
 If Ribbon is already running, just refresh. It finds new folders by itself.
 
@@ -91,6 +100,17 @@ and other private things out of the list. If you really want them:
 ```bash
 python3 _ribbon/ribbon.py --include-untitled
 ```
+
+## Scripts and tools
+
+Folders that are not websites still show up. Ribbon makes a project card
+for any folder with a README, a script, or a build file such as
+`package.json`, `pyproject.toml`, `Cargo.toml`, or a `Makefile`.
+
+The card shows the folder name, the first paragraph of the README, the
+kind of project, its files, and a suggested command to run it. It uses
+the same Git lights as everything else. Nothing is written into the
+folder, and you never have to add an `index.html` just to see it.
 
 ## Check what it found
 
@@ -157,7 +177,9 @@ the button in that panel.
   using this. On GitHub's free plan, Pages needs a public repository.
 - **Publish to GitHub Pages** does the same for a repository that already
   has a remote. Click the right-hand light when everything is pushed. Pages
-  uses the current branch and the repository root.
+  uses the current branch and the repository root, so it needs an
+  `index.html` there. If your page has another name, Ribbon offers to create
+  an `index.html` that opens it; commit and push that file, then publish.
 
 Two safety notes:
 
@@ -180,7 +202,7 @@ Use `--no-git-actions` if you want the lights but not the buttons.
 | The address is already in use | Ribbon tries the next port by itself. It tells you which one it picked. |
 | The Git buttons are greyed out | Start Ribbon on `127.0.0.1` without `--no-git-actions`. Opening the page as a file cannot run Git. |
 | **Create a remote** fails | Run `gh auth login`, and check that the repository name is not already taken. |
-| **Publish with GitHub Pages** fails | Pages needs a public repo on the free plan. Check that the default branch contains an `index.html`. |
+| **Publish with GitHub Pages** fails | Pages needs a public repo on the free plan. Check that the repository root contains an `index.html`. |
 | Git says there is nothing to commit | The app was refreshed before the last file change. Close the panel and open it again. |
 | You forgot the commands | Run `python3 _ribbon/ribbon.py --help`. |
 
@@ -202,7 +224,7 @@ python3 _ribbon/ribbon.py --help           # all options, with examples
 
 ## For the very curious
 
-The folder has six small pieces:
+The folder has eight small pieces:
 
 ```
 _ribbon/
@@ -210,6 +232,8 @@ _ribbon/
   boot.js     the tiny check that restores a hidden bar on load
   shell.js    the bar and window used by the no-server page
   apps.js     the list that page uses (made by --write-apps)
+  card.js     the project card shown for scripts and tools
+  card.css    the look of that card
   ribbon.py   finds the apps, serves them, and adds the bar
   ribbon.js   the bar itself, for the server version
 ```

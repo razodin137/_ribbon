@@ -609,7 +609,60 @@ def git_push(target: Path) -> dict:
     return _action_ok(output or "Pushed the commits.")
 
 
-def git_create_remote(target: Path, name: str, visibility: str) -> dict:
+def _github_owner_repo(root: Path) -> tuple[str, str] | None:
+    url = _git_text(root, ["remote", "get-url", "origin"])
+    match = re.search(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/*$", url)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _github_pages_url(owner: str, name: str) -> str:
+    owner_lower = owner.lower()
+    name_lower = name.lower()
+    if name_lower == f"{owner_lower}.github.io":
+        return f"https://{owner_lower}.github.io/"
+    return f"https://{owner_lower}.github.io/{name_lower}/"
+
+
+def _enable_github_pages(
+    root: Path, owner: str, name: str, branch: str
+) -> tuple[bool, str]:
+    ok, output = _run_command(
+        [
+            "gh",
+            "api",
+            "--method",
+            "POST",
+            f"repos/{owner}/{name}/pages",
+            "-f",
+            f"source[branch]={branch}",
+            "-f",
+            "source[path]=/",
+        ],
+        root,
+        90,
+    )
+    if not ok and ("409" in output or "already" in output.lower()):
+        return True, output
+    return ok, output
+
+
+def _set_repo_homepage(
+    root: Path, owner: str, name: str, url: str
+) -> tuple[bool, str]:
+    return _run_command(
+        ["gh", "repo", "edit", f"{owner}/{name}", "--homepage", url], root, 60
+    )
+
+
+def git_create_remote(
+    target: Path,
+    name: str,
+    visibility: str,
+    description: str = "",
+    pages: bool = False,
+) -> dict:
     status = read_git_status(target)
     if not status.get("repo"):
         return _action_error("This folder is not a Git repository.")
@@ -638,25 +691,106 @@ def git_create_remote(target: Path, name: str, visibility: str) -> dict:
         return _action_error("Choose private or public visibility.")
 
     flag = "--private" if visibility == "private" else "--public"
-    ok, output = _run_command(
-        [
-            "gh",
-            "repo",
-            "create",
-            name,
-            "--source",
-            ".",
-            "--remote",
-            "origin",
-            "--push",
-            flag,
-        ],
-        root,
-        180,
-    )
+    description = str(description or "").strip()[:350]
+    cmd = [
+        "gh",
+        "repo",
+        "create",
+        name,
+        "--source",
+        ".",
+        "--remote",
+        "origin",
+        "--push",
+        flag,
+    ]
+    if description:
+        cmd.extend(["--description", description])
+    ok, output = _run_command(cmd, root, 180)
     if not ok:
         return _action_error("Creating the GitHub repo failed.", output)
-    return _action_ok(output or f"Created {name} and pushed the commits.")
+
+    result = _action_ok(output or f"Created {name} and pushed the commits.")
+    if not pages:
+        return result
+
+    owner_repo = _github_owner_repo(root)
+    if not owner_repo:
+        result["pages_error"] = (
+            "The repo was created, but its origin URL could not be read, "
+            "so GitHub Pages was not enabled."
+        )
+        return result
+    owner, repo = owner_repo
+
+    branch = status.get("branch") or _git_text(
+        root, ["symbolic-ref", "--short", "-q", "HEAD"]
+    )
+    if not branch:
+        result["pages_error"] = (
+            "The repo was created, but the branch name could not be found, "
+            "so GitHub Pages was not enabled."
+        )
+        return result
+
+    ok, pages_output = _enable_github_pages(root, owner, repo, branch)
+    if not ok:
+        result["pages_error"] = "GitHub Pages could not be enabled.\n" + pages_output
+        return result
+
+    pages_url = _github_pages_url(owner, repo)
+    result["pages_url"] = pages_url
+    ok, homepage_output = _set_repo_homepage(root, owner, repo, pages_url)
+    if not ok:
+        result["pages_error"] = (
+            "GitHub Pages is on, but the repo homepage could not be set.\n"
+            + homepage_output
+        )
+    return result
+
+
+def git_enable_pages(target: Path) -> dict:
+    status = read_git_status(target)
+    if not status.get("repo"):
+        return _action_error("This folder is not a Git repository.")
+    if status.get("state") == "detached":
+        return _action_error("You are on a detached HEAD. Switch to a branch first.")
+    if not status.get("has_remote"):
+        return _action_error("Create a GitHub remote first.")
+
+    root = _repo_root(target) or target
+    if not shutil.which("gh"):
+        return _action_error("GitHub CLI (gh) is not installed.")
+
+    ok, auth_output = _run_command(["gh", "auth", "status"], root, 20)
+    if not ok:
+        return _action_error("GitHub CLI is not logged in. Run: gh auth login", auth_output)
+
+    owner_repo = _github_owner_repo(root)
+    if not owner_repo:
+        return _action_error("The origin remote does not point at GitHub.")
+    owner, repo = owner_repo
+
+    branch = status.get("branch") or _git_text(
+        root, ["symbolic-ref", "--short", "-q", "HEAD"]
+    )
+    if not branch or branch == "HEAD":
+        return _action_error("You are not on a branch.")
+
+    ok, output = _enable_github_pages(root, owner, repo, branch)
+    if not ok:
+        return _action_error("GitHub Pages could not be enabled.", output)
+
+    pages_url = _github_pages_url(owner, repo)
+    result = _action_ok(output or f"Enabled GitHub Pages at {pages_url}.")
+    result["pages_url"] = pages_url
+    ok, homepage_output = _set_repo_homepage(root, owner, repo, pages_url)
+    if not ok:
+        result["pages_error"] = (
+            "GitHub Pages is on, but the repo homepage could not be set.\n"
+            + homepage_output
+        )
+    return result
 
 
 def run_git_action(action: str, target: Path, body: dict) -> dict:
@@ -670,11 +804,15 @@ def run_git_action(action: str, target: Path, body: dict) -> dict:
         return git_commit(target, _clean_message(body.get("message"), f"Update {target.name}"))
     if action == "push":
         return git_push(target)
+    if action == "pages":
+        return git_enable_pages(target)
     if action == "remote":
         return git_create_remote(
             target,
             str(body.get("name") or "").strip(),
             str(body.get("visibility") or "private").lower(),
+            str(body.get("description") or "").strip(),
+            bool(body.get("pages")),
         )
     return _action_error("Unknown Git action.")
 

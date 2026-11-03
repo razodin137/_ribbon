@@ -6,22 +6,22 @@
  *   window.__RIBBON_APPS__ = [{ url: "/app/", title: "App" }];
  */
 (function () {
-  "use strict";
+  "use strict"
 
-  if (window.__RIBBON_MOUNTED__) return;
-  if (window.self !== window.top) return;
-  window.__RIBBON_MOUNTED__ = true;
+  if (window.__RIBBON_MOUNTED__) return
+  if (window.self !== window.top) return
+  window.__RIBBON_MOUNTED__ = true
 
-  var scriptEl = document.currentScript || document.querySelector("script[data-ribbon]");
-  var scriptBase = "/__ribbon/";
+  const scriptEl = document.currentScript || document.querySelector("script[data-ribbon]")
+  let scriptBase = "/__ribbon/"
   if (scriptEl && scriptEl.src) {
     try {
-      scriptBase = new URL(".", scriptEl.src).href;
-    } catch (_) {}
+      scriptBase = new URL(".", scriptEl.src).href
+    } catch (_) { /* keep the default base */ }
   }
 
-  var STORAGE_KEY = "ribbon:hidden";
-  var CSS = `
+  const STORAGE_KEY = "ribbon:hidden"
+  const CSS = `
     :host { all: initial; }
     *, *::before, *::after { box-sizing: border-box; }
 
@@ -586,6 +586,8 @@
       background: rgba(255, 255, 255, .03);
       color: #a9a496;
       font-size: 11.5px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
     .git-output {
       margin: 12px 0 0;
@@ -712,51 +714,51 @@
     @media (prefers-reduced-motion: reduce) {
       .bar, .peek, .led-tip { transition: none; }
     }
-  `;
+  `
 
   function boot() {
     if (document.body) {
-      start();
+      start()
     } else {
-      document.addEventListener("DOMContentLoaded", start, { once: true });
+      document.addEventListener("DOMContentLoaded", start, { once: true })
     }
   }
 
   function start() {
     if (Array.isArray(window.__RIBBON_APPS__)) {
-      mount(window.__RIBBON_APPS__);
-      return;
+      mount(window.__RIBBON_APPS__)
+      return
     }
 
-    var manifestUrl;
+    let manifestUrl
     try {
-      manifestUrl = new URL("manifest.json", scriptBase).href;
+      manifestUrl = new URL("manifest.json", scriptBase).href
     } catch (_) {
-      return;
+      return
     }
 
     fetch(manifestUrl, { cache: "no-store" })
       .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
+        if (!response.ok) throw new Error("HTTP " + response.status)
+        return response.json()
       })
       .then(function (data) {
-        var apps = Array.isArray(data) ? data : data && data.apps;
-        if (Array.isArray(apps) && apps.length) mount(apps);
+        const apps = Array.isArray(data) ? data : data && data.apps
+        if (Array.isArray(apps) && apps.length) mount(apps)
       })
       .catch(function () {
         /* No manifest (for example, opened from file://): stay quiet. */
-      });
+      })
   }
 
   function mount(rawApps) {
-    var apps = rawApps.filter(function (app) {
-      return app && typeof app.url === "string" && app.url;
-    });
-    if (!apps.length) return;
+    const apps = rawApps.filter(function (app) {
+      return app && typeof app.url === "string" && app.url
+    })
+    if (!apps.length) return
 
-    var host = document.createElement("div");
-    host.setAttribute("data-ribbon-host", "");
+    const host = document.createElement("div")
+    host.setAttribute("data-ribbon-host", "")
     host.style.cssText = [
       "position:fixed!important",
       "top:0!important",
@@ -772,9 +774,9 @@
       "display:block!important",
       "pointer-events:none!important",
       "isolation:isolate!important"
-    ].join(";");
+    ].join(";")
 
-    var shadow = host.attachShadow({ mode: "open" });
+    const shadow = host.attachShadow({ mode: "open" })
     shadow.innerHTML =
       "<style>" + CSS + "</style>" +
       '<div class="bar" role="navigation" aria-label="App ribbon">' +
@@ -784,78 +786,78 @@
               '<button class="led-btn" type="button" data-led="repo" aria-label="Repository status"><span class="led off" data-led-dot="repo" aria-hidden="true"></span></button>' +
               '<button class="led-btn" type="button" data-led="changes" aria-label="Changes status"><span class="led off" data-led-dot="changes" aria-hidden="true"></span></button>' +
               '<button class="led-btn" type="button" data-led="remote" aria-label="Remote status"><span class="led off" data-led-dot="remote" aria-hidden="true"></span></button>' +
-            '</span>' +
+            "</span>" +
             '<span class="led-tip" id="led-tip" role="tooltip" aria-hidden="true">' +
               '<span class="led-tip-row"><span class="led off" data-tip-led="repo" aria-hidden="true"></span><span data-tip-text="repo"></span></span>' +
               '<span class="led-tip-row"><span class="led off" data-tip-led="changes" aria-hidden="true"></span><span data-tip-text="changes"></span></span>' +
               '<span class="led-tip-row"><span class="led off" data-tip-led="remote" aria-hidden="true"></span><span data-tip-text="remote"></span></span>' +
-            '</span>' +
-          '</span>' +
+            "</span>" +
+          "</span>" +
           '<span class="count"></span>' +
-        '</div>' +
+        "</div>" +
         '<div class="title-wrap">' +
           '<button class="title" type="button" aria-haspopup="dialog" aria-expanded="false" title="Show all apps">' +
             '<span class="title-text"></span>' +
             '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>' +
-          '</button>' +
-        '</div>' +
+          "</button>" +
+        "</div>" +
         '<div class="actions">' +
           '<button class="btn" type="button" data-act="prev" aria-label="Previous app" title="Previous app — [">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>' +
             '<span class="label">Back</span>' +
-          '</button>' +
+          "</button>" +
           '<button class="btn" type="button" data-act="next" aria-label="Next app" title="Next app — ]">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>' +
             '<span class="label">Next</span>' +
-          '</button>' +
+          "</button>" +
           '<button class="btn" type="button" data-act="random" aria-label="Random app" title="Random app — R">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 4l3 3-3 3"/><path d="M18 20l3-3-3-3"/><path d="M3 7h3c2 0 3.5 1 4.5 2.5l3 5C14.5 16 16 17 18 17h3"/><path d="M3 17h3c2 0 3.5-1 4.5-2.5l3-5C14.5 8 16 7 18 7h3"/></svg>' +
             '<span class="label">Random</span>' +
-          '</button>' +
+          "</button>" +
           '<button class="btn" type="button" data-act="reload" aria-label="Reload app" title="Reload app — Shift+R">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>' +
-          '</button>' +
+          "</button>" +
           '<span class="sep" aria-hidden="true"></span>' +
           '<button class="btn" type="button" data-act="hide" aria-label="Hide ribbon" title="Hide ribbon — H">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>' +
-          '</button>' +
-        '</div>' +
+          "</button>" +
+        "</div>" +
         '<div class="menu" hidden role="dialog" aria-label="All apps">' +
           '<div class="menu-top">' +
             '<div class="menu-current">' +
               '<span class="menu-current-label">Current app</span>' +
               '<span class="menu-current-title"></span>' +
-            '</div>' +
+            "</div>" +
             '<button class="star-btn" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>' +
-          '</div>' +
+          "</div>" +
           '<div class="menu-search">' +
             '<input class="menu-input" type="search" placeholder="Search apps…" aria-label="Search apps" autocomplete="off" spellcheck="false">' +
-          '</div>' +
+          "</div>" +
           '<div class="menu-scroll">' +
             '<div class="menu-section" data-section="favorites" hidden>' +
               '<div class="menu-heading">Favorites</div>' +
               '<div class="menu-list" data-list="favorites"></div>' +
-            '</div>' +
+            "</div>" +
             '<div class="menu-section" data-section="all">' +
               '<div class="menu-heading">All apps</div>' +
               '<div class="menu-list" data-list="all"></div>' +
-            '</div>' +
+            "</div>" +
             '<div class="menu-empty" hidden>No apps match.</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
+          "</div>" +
+        "</div>" +
+      "</div>" +
       '<button class="peek" type="button" aria-label="Show ribbon" title="Show ribbon — H">' +
         '<span aria-hidden="true">▤</span><span class="peek-label">ribbon</span>' +
-      '</button>' +
+      "</button>" +
       '<div class="git-overlay" hidden>' +
         '<div class="git-dialog" role="dialog" aria-modal="true" aria-labelledby="git-title">' +
           '<div class="git-head">' +
             '<div class="git-heading">' +
               '<div class="git-kicker">Git</div>' +
               '<div class="git-title" id="git-title"></div>' +
-            '</div>' +
+            "</div>" +
             '<button class="git-close" type="button" aria-label="Close">✕</button>' +
-          '</div>' +
+          "</div>" +
           '<div class="git-body">' +
             '<div class="git-summary"></div>' +
             '<div class="git-files" hidden></div>' +
@@ -863,443 +865,459 @@
             '<label class="git-field git-message-field" hidden>' +
               '<span class="git-label">Commit message</span>' +
               '<input class="git-input git-message" type="text" maxlength="2000" autocomplete="off">' +
-            '</label>' +
+            "</label>" +
             '<label class="git-field git-name-field" hidden>' +
               '<span class="git-label">GitHub repo name</span>' +
               '<input class="git-input git-name" type="text" maxlength="100" autocomplete="off" spellcheck="false">' +
-            '</label>' +
+            "</label>" +
             '<div class="git-field git-visibility-field" hidden>' +
               '<span class="git-label">Visibility</span>' +
               '<div class="git-radios">' +
                 '<label class="git-radio"><input type="radio" name="git-visibility" value="private" checked> Private</label>' +
                 '<label class="git-radio"><input type="radio" name="git-visibility" value="public"> Public</label>' +
-              '</div>' +
-            '</div>' +
+              "</div>" +
+            "</div>" +
+            '<label class="git-field git-description-field" hidden>' +
+              '<span class="git-label">Description (optional)</span>' +
+              '<input class="git-input git-description" type="text" maxlength="350" autocomplete="off" placeholder="What is this app?">' +
+            "</label>" +
+            '<label class="git-check git-pages-field" hidden>' +
+              '<input type="checkbox" class="git-pages">' +
+              "<span>Publish with GitHub Pages and set it as the repo homepage</span>" +
+            "</label>" +
             '<label class="git-check git-ignore-field" hidden>' +
               '<input type="checkbox" class="git-ignore" checked>' +
-              '<span>Add a .gitignore for node_modules, .venv, dist…</span>' +
-            '</label>' +
+              "<span>Add a .gitignore for node_modules, .venv, dist…</span>" +
+            "</label>" +
             '<div class="git-note" hidden></div>' +
             '<pre class="git-output" hidden></pre>' +
-          '</div>' +
+          "</div>" +
           '<div class="git-actions">' +
             '<span class="git-status"></span>' +
             '<button class="btn git-cancel" type="button">Close</button>' +
             '<button class="btn git-primary" type="button" hidden></button>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
+          "</div>" +
+        "</div>" +
+      "</div>"
 
-    var bar = shadow.querySelector(".bar");
-    var countEl = shadow.querySelector(".count");
-    var titleButton = shadow.querySelector(".title");
-    var titleText = shadow.querySelector(".title-text");
-    var peekEl = shadow.querySelector(".peek");
-    var ledRepo = shadow.querySelector('[data-led-dot="repo"]');
-    var ledChanges = shadow.querySelector('[data-led-dot="changes"]');
-    var ledRemote = shadow.querySelector('[data-led-dot="remote"]');
-    var ledsWrap = shadow.querySelector(".leds");
-    var ledButtons = shadow.querySelectorAll(".led-btn");
-    var ledWrap = ledsWrap.parentNode;
-    var ledTip = shadow.querySelector(".led-tip");
-    var tipRepoDot = ledTip.querySelector('[data-tip-led="repo"]');
-    var tipChangesDot = ledTip.querySelector('[data-tip-led="changes"]');
-    var tipRemoteDot = ledTip.querySelector('[data-tip-led="remote"]');
-    var tipRepoText = ledTip.querySelector('[data-tip-text="repo"]');
-    var tipChangesText = ledTip.querySelector('[data-tip-text="changes"]');
-    var tipRemoteText = ledTip.querySelector('[data-tip-text="remote"]');
-    var buttons = shadow.querySelectorAll("button[data-act]");
+    const bar = shadow.querySelector(".bar")
+    const countEl = shadow.querySelector(".count")
+    const titleButton = shadow.querySelector(".title")
+    const titleText = shadow.querySelector(".title-text")
+    const peekEl = shadow.querySelector(".peek")
+    const ledRepo = shadow.querySelector('[data-led-dot="repo"]')
+    const ledChanges = shadow.querySelector('[data-led-dot="changes"]')
+    const ledRemote = shadow.querySelector('[data-led-dot="remote"]')
+    const ledsWrap = shadow.querySelector(".leds")
+    const ledButtons = shadow.querySelectorAll(".led-btn")
+    const ledWrap = ledsWrap.parentNode
+    const ledTip = shadow.querySelector(".led-tip")
+    const tipRepoDot = ledTip.querySelector('[data-tip-led="repo"]')
+    const tipChangesDot = ledTip.querySelector('[data-tip-led="changes"]')
+    const tipRemoteDot = ledTip.querySelector('[data-tip-led="remote"]')
+    const tipRepoText = ledTip.querySelector('[data-tip-text="repo"]')
+    const tipChangesText = ledTip.querySelector('[data-tip-text="changes"]')
+    const tipRemoteText = ledTip.querySelector('[data-tip-text="remote"]')
+    const buttons = shadow.querySelectorAll("button[data-act]")
 
-    var gitToken = scriptEl ? scriptEl.getAttribute("data-ribbon-token") || "" : "";
-    var gitOverlay = shadow.querySelector(".git-overlay");
-    var gitTitle = shadow.querySelector(".git-title");
-    var gitSummary = shadow.querySelector(".git-summary");
-    var gitFiles = shadow.querySelector(".git-files");
-    var gitWarnings = shadow.querySelector(".git-warnings");
-    var gitMessageField = shadow.querySelector(".git-message-field");
-    var gitMessage = shadow.querySelector(".git-message");
-    var gitNameField = shadow.querySelector(".git-name-field");
-    var gitName = shadow.querySelector(".git-name");
-    var gitVisibilityField = shadow.querySelector(".git-visibility-field");
-    var gitVisibilityInputs = shadow.querySelectorAll('input[name="git-visibility"]');
-    var gitIgnoreField = shadow.querySelector(".git-ignore-field");
-    var gitIgnore = shadow.querySelector(".git-ignore");
-    var gitNote = shadow.querySelector(".git-note");
-    var gitOutput = shadow.querySelector(".git-output");
-    var gitStatus = shadow.querySelector(".git-status");
-    var gitCancel = shadow.querySelector(".git-cancel");
-    var gitPrimary = shadow.querySelector(".git-primary");
-    var gitClose = shadow.querySelector(".git-close");
+    const gitToken = scriptEl ? scriptEl.getAttribute("data-ribbon-token") || "" : ""
+    const gitOverlay = shadow.querySelector(".git-overlay")
+    const gitTitle = shadow.querySelector(".git-title")
+    const gitSummary = shadow.querySelector(".git-summary")
+    const gitFiles = shadow.querySelector(".git-files")
+    const gitWarnings = shadow.querySelector(".git-warnings")
+    const gitMessageField = shadow.querySelector(".git-message-field")
+    const gitMessage = shadow.querySelector(".git-message")
+    const gitNameField = shadow.querySelector(".git-name-field")
+    const gitName = shadow.querySelector(".git-name")
+    const gitVisibilityField = shadow.querySelector(".git-visibility-field")
+    const gitVisibilityInputs = shadow.querySelectorAll('input[name="git-visibility"]')
+    const gitDescriptionField = shadow.querySelector(".git-description-field")
+    const gitDescription = shadow.querySelector(".git-description")
+    const gitPagesField = shadow.querySelector(".git-pages-field")
+    const gitPages = shadow.querySelector(".git-pages")
+    const gitIgnoreField = shadow.querySelector(".git-ignore-field")
+    const gitIgnore = shadow.querySelector(".git-ignore")
+    const gitNote = shadow.querySelector(".git-note")
+    const gitOutput = shadow.querySelector(".git-output")
+    const gitStatus = shadow.querySelector(".git-status")
+    const gitCancel = shadow.querySelector(".git-cancel")
+    const gitPrimary = shadow.querySelector(".git-primary")
+    const gitClose = shadow.querySelector(".git-close")
 
-    var menuEl = shadow.querySelector(".menu");
-    var menuCurrentTitle = shadow.querySelector(".menu-current-title");
-    var starCurrent = shadow.querySelector(".star-btn");
-    var searchInput = shadow.querySelector(".menu-input");
-    var menuFavSection = shadow.querySelector('[data-section="favorites"]');
-    var menuAllSection = shadow.querySelector('[data-section="all"]');
-    var menuFavList = shadow.querySelector('[data-list="favorites"]');
-    var menuAllList = shadow.querySelector('[data-list="all"]');
-    var menuAllHeading = menuAllSection.querySelector(".menu-heading");
-    var menuEmpty = shadow.querySelector(".menu-empty");
+    const menuEl = shadow.querySelector(".menu")
+    const menuCurrentTitle = shadow.querySelector(".menu-current-title")
+    const starCurrent = shadow.querySelector(".star-btn")
+    const searchInput = shadow.querySelector(".menu-input")
+    const menuFavSection = shadow.querySelector('[data-section="favorites"]')
+    const menuAllSection = shadow.querySelector('[data-section="all"]')
+    const menuFavList = shadow.querySelector('[data-list="favorites"]')
+    const menuAllList = shadow.querySelector('[data-list="all"]')
+    const menuAllHeading = menuAllSection.querySelector(".menu-heading")
+    const menuEmpty = shadow.querySelector(".menu-empty")
 
-    var here = normalizePath(location.pathname);
-    var index = -1;
-    for (var i = 0; i < apps.length; i += 1) {
+    const here = normalizePath(location.pathname)
+    let index = -1
+    for (let i = 0; i < apps.length; i += 1) {
       if (normalizePath(entryPath(apps[i])) === here) {
-        index = i;
-        break;
+        index = i
+        break
       }
     }
-    var exact = index >= 0;
+    const exact = index >= 0
     if (index < 0) {
-      var bestLength = -1;
-      for (var j = 0; j < apps.length; j += 1) {
-        var candidate = normalizePath(entryPath(apps[j]));
+      let bestLength = -1
+      for (let j = 0; j < apps.length; j += 1) {
+        const candidate = normalizePath(entryPath(apps[j]))
         if (here.indexOf(candidate) === 0 && candidate.length > bestLength) {
-          bestLength = candidate.length;
-          index = j;
+          bestLength = candidate.length
+          index = j
         }
       }
     }
 
-    var pageTitle = (document.title || "").trim();
-    var currentTitle = exact && apps[index]
+    const pageTitle = (document.title || "").trim()
+    const currentTitle = exact && apps[index]
       ? apps[index].title
-      : pageTitle || (apps[index] && apps[index].title) || "Untitled";
+      : pageTitle || (apps[index] && apps[index].title) || "Untitled"
 
-    var favorites = readFavorites();
-    var menuOpen = false;
-    var currentGit = null;
-    var gitDetail = null;
-    var gitAction = null;
-    var gitBusy = false;
-    var gitBlocked = false;
-    var gitReturnFocus = null;
+    const favorites = readFavorites()
+    let menuOpen = false
+    let gitDetail = null
+    let gitAction = null
+    let gitBusy = false
+    let gitBlocked = false
+    let gitReturnFocus = null
 
-    titleText.textContent = currentTitle;
-    titleButton.title = "Show all apps";
-    menuCurrentTitle.textContent = currentTitle;
-    countEl.textContent = (index >= 0 ? pad(index + 1, apps.length) : "—") + " / " + pad(apps.length, apps.length);
-    setGit(apps[index] && apps[index].git);
-    updateCurrentStar();
+    titleText.textContent = currentTitle
+    titleButton.title = "Show all apps"
+    menuCurrentTitle.textContent = currentTitle
+    countEl.textContent = (index >= 0 ? pad(index + 1, apps.length) : "—") + " / " + pad(apps.length, apps.length)
+    setGit(apps[index] && apps[index].git)
+    updateCurrentStar()
 
     if (apps.length < 2) {
-      for (var k = 0; k < buttons.length; k += 1) {
-        var act = buttons[k].getAttribute("data-act");
-        if (act !== "hide") buttons[k].disabled = true;
+      for (let k = 0; k < buttons.length; k += 1) {
+        const act = buttons[k].getAttribute("data-act")
+        if (act !== "hide") buttons[k].disabled = true
       }
     }
 
-    var manualHidden = readHidden();
-    var autoHidden = false;
-    var lastTargets = new Map();
-    var tipPinned = false;
-    var tipTimer = 0;
-    var hoverCapable = window.matchMedia("(hover: hover)").matches;
+    let manualHidden = readHidden()
+    let autoHidden = false
+    const lastTargets = new Map()
+    let tipPinned = false
+    let tipTimer = 0
+    const hoverCapable = window.matchMedia("(hover: hover)").matches
 
     function applyState() {
-      var gone = manualHidden || autoHidden;
+      const gone = manualHidden || autoHidden
       if (gone) {
-        closeTip();
-        closeMenu(false);
+        closeTip()
+        closeMenu(false)
       }
-      bar.classList.toggle("is-gone", gone);
-      if (gone) bar.setAttribute("inert", "");
-      else bar.removeAttribute("inert");
-      peekEl.classList.toggle("is-shown", manualHidden);
-      peekEl.tabIndex = manualHidden ? 0 : -1;
+      bar.classList.toggle("is-gone", gone)
+      if (gone) bar.setAttribute("inert", "")
+      else bar.removeAttribute("inert")
+      peekEl.classList.toggle("is-shown", manualHidden)
+      peekEl.tabIndex = manualHidden ? 0 : -1
     }
 
     function setManual(hidden) {
-      manualHidden = hidden;
-      if (hidden) autoHidden = false;
-      else lastTargets.clear();
+      manualHidden = hidden
+      if (hidden) autoHidden = false
+      else lastTargets.clear()
       try {
-        sessionStorage.setItem(STORAGE_KEY, hidden ? "1" : "0");
-      } catch (_) {}
-      applyState();
+        sessionStorage.setItem(STORAGE_KEY, hidden ? "1" : "0")
+      } catch (_) { /* storage may be unavailable */ }
+      applyState()
     }
 
     function go(direction) {
-      if (apps.length < 2) return;
-      var target;
+      if (apps.length < 2) return
+      let target
       if (index < 0) {
-        target = direction > 0 ? 0 : apps.length - 1;
+        target = direction > 0 ? 0 : apps.length - 1
       } else {
-        target = (index + direction + apps.length) % apps.length;
-        if (target === index) return;
+        target = (index + direction + apps.length) % apps.length
+        if (target === index) return
       }
-      location.assign(apps[target].url);
+      location.assign(apps[target].url)
     }
 
     function random() {
-      if (apps.length < 2) return;
-      var choices = apps.length - (index >= 0 ? 1 : 0);
-      var pick = Math.floor(Math.random() * choices);
-      if (index >= 0 && pick >= index) pick += 1;
-      location.assign(apps[pick].url);
+      if (apps.length < 2) return
+      const choices = apps.length - (index >= 0 ? 1 : 0)
+      let pick = Math.floor(Math.random() * choices)
+      if (index >= 0 && pick >= index) pick += 1
+      location.assign(apps[pick].url)
     }
 
     function reloadApp() {
-      closeMenu(false);
-      location.reload();
+      closeMenu(false)
+      location.reload()
     }
 
     function appKey(app) {
-      return app ? app.dir || app.path || app.url || "" : "";
+      return app ? app.dir || app.path || app.url || "" : ""
     }
 
     function readFavorites() {
       try {
-        var stored = JSON.parse(localStorage.getItem("ribbon:favorites") || "[]");
+        const stored = JSON.parse(localStorage.getItem("ribbon:favorites") || "[]")
         if (Array.isArray(stored)) {
           return new Set(stored.filter(function (item) {
-            return typeof item === "string";
-          }));
+            return typeof item === "string"
+          }))
         }
-      } catch (_) {}
-      return new Set();
+      } catch (_) { /* ignore unreadable favorites */ }
+      return new Set()
     }
 
     function saveFavorites() {
       try {
-        localStorage.setItem("ribbon:favorites", JSON.stringify(Array.from(favorites)));
-      } catch (_) {}
+        localStorage.setItem("ribbon:favorites", JSON.stringify(Array.from(favorites)))
+      } catch (_) { /* storage may be unavailable */ }
     }
 
     function isFavorite(app) {
-      return !!app && favorites.has(appKey(app));
+      return !!app && favorites.has(appKey(app))
     }
 
     function currentApp() {
-      return index >= 0 ? apps[index] : null;
+      return index >= 0 ? apps[index] : null
     }
 
     function updateCurrentStar() {
-      var app = currentApp();
-      var favorite = isFavorite(app);
-      var name = app ? app.title || "this app" : "this app";
-      var label = (favorite ? "Remove " : "Add ") +
-        name + (favorite ? " from favorites" : " to favorites");
-      starCurrent.disabled = !app;
-      starCurrent.setAttribute("aria-pressed", favorite ? "true" : "false");
-      starCurrent.textContent = favorite ? "★" : "☆";
-      starCurrent.title = label;
-      starCurrent.setAttribute("aria-label", label);
+      const app = currentApp()
+      const favorite = isFavorite(app)
+      const name = app ? app.title || "this app" : "this app"
+      const label = (favorite ? "Remove " : "Add ") +
+        name + (favorite ? " from favorites" : " to favorites")
+      starCurrent.disabled = !app
+      starCurrent.setAttribute("aria-pressed", favorite ? "true" : "false")
+      starCurrent.textContent = favorite ? "★" : "☆"
+      starCurrent.title = label
+      starCurrent.setAttribute("aria-label", label)
     }
 
     function favoriteRow(app, appIndex) {
-      var favorite = isFavorite(app);
-      var row = document.createElement("div");
-      row.className = "menu-row" + (appIndex === index ? " is-current" : "");
+      const favorite = isFavorite(app)
+      const row = document.createElement("div")
+      row.className = "menu-row" + (appIndex === index ? " is-current" : "")
 
-      var open = document.createElement("button");
-      open.type = "button";
-      open.className = "menu-app";
-      open.setAttribute("data-app", String(appIndex));
-      if (appIndex === index) open.setAttribute("aria-current", "true");
+      const open = document.createElement("button")
+      open.type = "button"
+      open.className = "menu-app"
+      open.setAttribute("data-app", String(appIndex))
+      if (appIndex === index) open.setAttribute("aria-current", "true")
 
-      var title = document.createElement("span");
-      title.className = "menu-app-title";
-      title.textContent = app.title || "Untitled";
+      const title = document.createElement("span")
+      title.className = "menu-app-title"
+      title.textContent = app.title || "Untitled"
 
-      var path = app.path || app.dir || "";
-      var dir = document.createElement("span");
-      dir.className = "menu-app-dir";
-      dir.textContent = path && path !== "." ? "/" + path : "/";
+      const path = app.path || app.dir || ""
+      const dir = document.createElement("span")
+      dir.className = "menu-app-dir"
+      dir.textContent = path && path !== "." ? "/" + path : "/"
 
-      open.appendChild(title);
-      open.appendChild(dir);
+      open.appendChild(title)
+      open.appendChild(dir)
 
-      var star = document.createElement("button");
-      star.type = "button";
-      star.className = "row-star";
-      star.setAttribute("data-star", appKey(app));
-      star.setAttribute("aria-pressed", favorite ? "true" : "false");
-      star.title = favorite ? "Remove from favorites" : "Add to favorites";
+      const star = document.createElement("button")
+      star.type = "button"
+      star.className = "row-star"
+      star.setAttribute("data-star", appKey(app))
+      star.setAttribute("aria-pressed", favorite ? "true" : "false")
+      star.title = favorite ? "Remove from favorites" : "Add to favorites"
       star.setAttribute(
         "aria-label",
         (favorite ? "Remove " : "Add ") +
           (app.title || "app") +
           (favorite ? " from favorites" : " to favorites")
-      );
-      star.textContent = favorite ? "★" : "☆";
+      )
+      star.textContent = favorite ? "★" : "☆"
 
-      row.appendChild(open);
-      row.appendChild(star);
-      return row;
+      row.appendChild(open)
+      row.appendChild(star)
+      return row
     }
 
     function matchesQuery(app, query) {
-      if (!query) return true;
-      var haystack = String(app.title || "").toLowerCase() +
-        " " + String(app.path || app.dir || "").toLowerCase();
-      return haystack.indexOf(query) !== -1;
+      if (!query) return true
+      const haystack = String(app.title || "").toLowerCase() +
+        " " + String(app.path || app.dir || "").toLowerCase()
+      return haystack.indexOf(query) !== -1
     }
 
     function renderMenu(query) {
-      var needle = (query || "").trim().toLowerCase();
-      menuFavList.textContent = "";
-      menuAllList.textContent = "";
-      var favoriteCount = 0;
-      var otherCount = 0;
+      const needle = (query || "").trim().toLowerCase()
+      menuFavList.textContent = ""
+      menuAllList.textContent = ""
+      let favoriteCount = 0
+      let otherCount = 0
 
       apps.forEach(function (app, appIndex) {
-        if (!matchesQuery(app, needle)) return;
+        if (!matchesQuery(app, needle)) return
         if (isFavorite(app)) {
-          menuFavList.appendChild(favoriteRow(app, appIndex));
-          favoriteCount += 1;
+          menuFavList.appendChild(favoriteRow(app, appIndex))
+          favoriteCount += 1
         } else {
-          menuAllList.appendChild(favoriteRow(app, appIndex));
-          otherCount += 1;
+          menuAllList.appendChild(favoriteRow(app, appIndex))
+          otherCount += 1
         }
-      });
+      })
 
-      menuFavSection.hidden = favoriteCount === 0;
-      menuAllSection.hidden = otherCount === 0;
-      menuEmpty.hidden = favoriteCount + otherCount > 0;
-      menuAllHeading.textContent = favoriteCount ? "Other apps" : "All apps";
+      menuFavSection.hidden = favoriteCount === 0
+      menuAllSection.hidden = otherCount === 0
+      menuEmpty.hidden = favoriteCount + otherCount > 0
+      menuAllHeading.textContent = favoriteCount ? "Other apps" : "All apps"
     }
 
     function openMenu() {
-      if (!apps.length) return;
+      if (!apps.length) return
       if (menuOpen) {
-        searchInput.focus();
-        searchInput.select();
-        return;
+        searchInput.focus()
+        searchInput.select()
+        return
       }
-      menuOpen = true;
-      menuEl.hidden = false;
-      titleButton.setAttribute("aria-expanded", "true");
-      searchInput.value = "";
-      renderMenu("");
-      updateCurrentStar();
+      menuOpen = true
+      menuEl.hidden = false
+      titleButton.setAttribute("aria-expanded", "true")
+      searchInput.value = ""
+      renderMenu("")
+      updateCurrentStar()
       requestAnimationFrame(function () {
-        searchInput.focus();
-        searchInput.select();
-      });
+        searchInput.focus()
+        searchInput.select()
+      })
     }
 
     function closeMenu(returnFocus) {
-      if (!menuOpen) return;
-      menuOpen = false;
-      menuEl.hidden = true;
-      titleButton.setAttribute("aria-expanded", "false");
-      if (returnFocus) titleButton.focus();
+      if (!menuOpen) return
+      menuOpen = false
+      menuEl.hidden = true
+      titleButton.setAttribute("aria-expanded", "false")
+      if (returnFocus) titleButton.focus()
     }
 
     function toggleMenu() {
-      if (menuOpen) closeMenu(true);
-      else openMenu();
+      if (menuOpen) closeMenu(true)
+      else openMenu()
     }
 
     function toggleFavorite(app, focusStar) {
-      var key = appKey(app);
-      if (!key) return;
-      if (favorites.has(key)) favorites.delete(key);
-      else favorites.add(key);
-      saveFavorites();
-      renderMenu(searchInput.value);
-      updateCurrentStar();
+      const key = appKey(app)
+      if (!key) return
+      if (favorites.has(key)) favorites.delete(key)
+      else favorites.add(key)
+      saveFavorites()
+      renderMenu(searchInput.value)
+      updateCurrentStar()
       if (focusStar) {
-        var stars = menuEl.querySelectorAll("[data-star]");
-        for (var i = 0; i < stars.length; i += 1) {
+        const stars = menuEl.querySelectorAll("[data-star]")
+        for (let i = 0; i < stars.length; i += 1) {
           if (stars[i].getAttribute("data-star") === key) {
-            stars[i].focus();
-            break;
+            stars[i].focus()
+            break
           }
         }
       }
     }
 
     function defaultRepoName() {
-      var app = currentApp();
-      var path = app ? app.path || app.dir || "" : "";
-      var name = path.split("/").pop() || (app && app.title) || "app";
-      name = name.replace(/^\d{4}-\d{2}-\d{2}-/, "");
-      name = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
-      return (name || "app").slice(0, 100);
+      const app = currentApp()
+      const path = app ? app.path || app.dir || "" : ""
+      let name = path.split("/").pop() || (app && app.title) || "app"
+      name = name.replace(/^\d{4}-\d{2}-\d{2}-/, "")
+      name = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "")
+      return (name || "app").slice(0, 100)
     }
 
     function decideGitAction(detail, focus) {
-      if (!detail || !detail.repo) return "init";
-      if (detail.state === "detached" || detail.state === "conflicted") return "info";
-      var dirty = !!(detail.files && detail.files.length);
-      var hasRemote = !!detail.has_remote;
-      var needsPush = hasRemote && detail.state !== "diverged" && (detail.ahead > 0 || !detail.upstream);
-      if (focus === "changes" && dirty) return "commit";
+      if (!detail || !detail.repo) return "init"
+      if (detail.state === "detached" || detail.state === "conflicted") return "info"
+      const dirty = !!(detail.files && detail.files.length)
+      const hasRemote = !!detail.has_remote
+      const needsPush = hasRemote && detail.state !== "diverged" && (detail.ahead > 0 || !detail.upstream)
+      if (focus === "changes" && dirty) return "commit"
       if (focus === "remote") {
-        if (!hasRemote) return detail.state === "no-commits" && !dirty ? "info" : "remote";
-        if (needsPush) return "push";
+        if (!hasRemote) return detail.state === "no-commits" && !dirty ? "info" : "remote"
+        if (needsPush) return "push"
+        if (!dirty && /github\.com[:/]/i.test(detail.remote_url || "")) return "pages"
       }
-      if (dirty) return "commit";
-      if (!hasRemote) return detail.state === "no-commits" ? "info" : "remote";
-      if (needsPush) return "push";
-      return "info";
+      if (dirty) return "commit"
+      if (!hasRemote) return detail.state === "no-commits" ? "info" : "remote"
+      if (needsPush) return "push"
+      return "info"
     }
 
     function summaryRow(label, value) {
-      var row = document.createElement("div");
-      row.className = "git-summary-row";
-      var labelEl = document.createElement("span");
-      labelEl.className = "git-summary-label";
-      labelEl.textContent = label;
-      var valueEl = document.createElement("span");
-      valueEl.className = "git-summary-value";
-      valueEl.textContent = value;
-      valueEl.title = value;
-      row.appendChild(labelEl);
-      row.appendChild(valueEl);
-      gitSummary.appendChild(row);
+      const row = document.createElement("div")
+      row.className = "git-summary-row"
+      const labelEl = document.createElement("span")
+      labelEl.className = "git-summary-label"
+      labelEl.textContent = label
+      const valueEl = document.createElement("span")
+      valueEl.className = "git-summary-value"
+      valueEl.textContent = value
+      valueEl.title = value
+      row.appendChild(labelEl)
+      row.appendChild(valueEl)
+      gitSummary.appendChild(row)
     }
 
     function renderGitUnavailable(message) {
-      gitDetail = null;
-      gitAction = null;
-      gitBlocked = false;
-      gitTitle.textContent = "Git unavailable";
-      gitSummary.textContent = "";
-      summaryRow("Status", message);
-      gitFiles.hidden = true;
-      gitWarnings.hidden = true;
-      gitMessageField.hidden = true;
-      gitNameField.hidden = true;
-      gitVisibilityField.hidden = true;
-      gitIgnoreField.hidden = true;
-      gitNote.hidden = true;
-      gitOutput.hidden = true;
-      gitStatus.className = "git-status";
-      gitStatus.textContent = "";
-      gitPrimary.hidden = true;
-      gitCancel.textContent = "Close";
-      gitCancel.focus();
+      gitDetail = null
+      gitAction = null
+      gitBlocked = false
+      gitTitle.textContent = "Git unavailable"
+      gitSummary.textContent = ""
+      summaryRow("Status", message)
+      gitFiles.hidden = true
+      gitWarnings.hidden = true
+      gitMessageField.hidden = true
+      gitNameField.hidden = true
+      gitVisibilityField.hidden = true
+      gitDescriptionField.hidden = true
+      gitPagesField.hidden = true
+      gitIgnoreField.hidden = true
+      gitNote.hidden = true
+      gitOutput.hidden = true
+      gitStatus.className = "git-status"
+      gitStatus.textContent = ""
+      gitPrimary.hidden = true
+      gitCancel.textContent = "Close"
+      gitCancel.focus()
     }
 
-    function renderGitPanel(detail, focus, success) {
-      gitDetail = detail;
-      gitAction = decideGitAction(detail, focus);
-      gitBlocked = false;
+    function renderGitPanel(detail, focus, success, extra) {
+      gitDetail = detail
+      gitAction = decideGitAction(detail, focus)
+      gitBlocked = false
 
-      var app = currentApp();
-      var titles = {
+      const app = currentApp()
+      const titles = {
         init: "Create a Git repository",
         commit: "Commit changes",
         push: "Push commits",
         remote: "Create a GitHub remote",
+        pages: "Publish to GitHub Pages",
         info: "Git status"
-      };
-      var labels = {
+      }
+      const labels = {
         init: "Create repo + commit",
         commit: "Commit changes",
         push: "Push commits",
-        remote: "Create repo + push"
-      };
-      gitTitle.textContent = titles[gitAction] || "Git status";
+        remote: "Create repo + push",
+        pages: "Publish to GitHub Pages"
+      }
+      gitTitle.textContent = titles[gitAction] || "Git status"
 
-      gitSummary.textContent = "";
-      summaryRow("Folder", detail.root || (app && (app.path || app.dir)) || "—");
-      summaryRow("Branch", detail.branch || "—");
-      var fileCount = detail.files ? detail.files.length : 0;
+      gitSummary.textContent = ""
+      summaryRow("Folder", detail.root || (app && (app.path || app.dir)) || "—")
+      summaryRow("Branch", detail.branch || "—")
+      const fileCount = detail.files ? detail.files.length : 0
       summaryRow(
         "Changes",
         fileCount
@@ -1307,235 +1325,250 @@
           : detail.repo
             ? "clean"
             : "no repository"
-      );
-      summaryRow("Remote", detail.remote_url || (detail.has_remote ? "configured" : "none"));
+      )
+      summaryRow("Remote", detail.remote_url || (detail.has_remote ? "configured" : "none"))
       if (detail.repo && detail.has_remote) {
-        var sync = [];
+        const sync = []
         if (detail.upstream) {
-          if (detail.ahead) sync.push(detail.ahead + " to push");
-          if (detail.behind) sync.push(detail.behind + " behind");
-          if (!sync.length) sync.push("up to date");
+          if (detail.ahead) sync.push(detail.ahead + " to push")
+          if (detail.behind) sync.push(detail.behind + " behind")
+          if (!sync.length) sync.push("up to date")
         } else {
-          sync.push("no upstream");
+          sync.push("no upstream")
         }
-        summaryRow("Sync", sync.join(", "));
+        summaryRow("Sync", sync.join(", "))
       }
 
-      var files = detail.files || [];
-      gitFiles.textContent = "";
-      gitFiles.hidden = !((gitAction === "commit" || gitAction === "init") && files.length);
+      const files = detail.files || []
+      gitFiles.textContent = ""
+      gitFiles.hidden = !((gitAction === "commit" || gitAction === "init") && files.length)
       if (!gitFiles.hidden) {
         files.slice(0, 12).forEach(function (item) {
-          var row = document.createElement("div");
-          row.className = "git-file";
-          var code = document.createElement("span");
-          code.className = "git-file-code";
-          code.textContent = item.code.trim() || "?";
-          var path = document.createElement("span");
-          path.className = "git-file-path";
-          path.textContent = item.path;
-          path.title = item.path;
-          row.appendChild(code);
-          row.appendChild(path);
-          gitFiles.appendChild(row);
-        });
+          const row = document.createElement("div")
+          row.className = "git-file"
+          const code = document.createElement("span")
+          code.className = "git-file-code"
+          code.textContent = item.code.trim() || "?"
+          const path = document.createElement("span")
+          path.className = "git-file-path"
+          path.textContent = item.path
+          path.title = item.path
+          row.appendChild(code)
+          row.appendChild(path)
+          gitFiles.appendChild(row)
+        })
         if (files.length > 12) {
-          var more = document.createElement("div");
-          more.className = "git-file-more";
-          more.textContent = "+" + (files.length - 12) + " more";
-          gitFiles.appendChild(more);
+          const more = document.createElement("div")
+          more.className = "git-file-more"
+          more.textContent = "+" + (files.length - 12) + " more"
+          gitFiles.appendChild(more)
         }
       }
 
-      var warnings = (detail.warnings || []).filter(function (warning) {
+      const warnings = (detail.warnings || []).filter(function (warning) {
         return !(
           gitAction === "init" &&
           !detail.has_gitignore &&
           warning.indexOf("No .gitignore") === 0
-        );
-      });
-      gitWarnings.textContent = "";
-      gitWarnings.hidden = warnings.length === 0;
+        )
+      })
+      gitWarnings.textContent = ""
+      gitWarnings.hidden = warnings.length === 0
       warnings.forEach(function (warning) {
-        var row = document.createElement("div");
-        row.className = "git-warning";
-        row.textContent = warning;
-        gitWarnings.appendChild(row);
-      });
+        const row = document.createElement("div")
+        row.className = "git-warning"
+        row.textContent = warning
+        gitWarnings.appendChild(row)
+      })
 
-      var canWrite = !!gitToken;
-      gitMessageField.hidden = !(gitAction === "commit" || gitAction === "init");
+      const canWrite = !!gitToken
+      gitMessageField.hidden = !(gitAction === "commit" || gitAction === "init")
       if (!gitMessageField.hidden) {
         gitMessage.value = gitAction === "init"
           ? "Initial commit"
-          : "Update " + ((app && app.title) || detail.branch || "app");
+          : "Update " + ((app && app.title) || detail.branch || "app")
       }
-      gitNameField.hidden = gitAction !== "remote";
-      if (!gitNameField.hidden) gitName.value = defaultRepoName();
-      gitVisibilityField.hidden = gitAction !== "remote";
+      gitNameField.hidden = gitAction !== "remote"
+      if (!gitNameField.hidden) gitName.value = defaultRepoName()
+      gitVisibilityField.hidden = gitAction !== "remote"
       if (!gitVisibilityField.hidden) {
-        for (var i = 0; i < gitVisibilityInputs.length; i += 1) {
-          gitVisibilityInputs[i].checked = gitVisibilityInputs[i].value === "private";
+        for (let i = 0; i < gitVisibilityInputs.length; i += 1) {
+          gitVisibilityInputs[i].checked = gitVisibilityInputs[i].value === "private"
         }
       }
-      gitIgnoreField.hidden = gitAction !== "init" || !!detail.has_gitignore;
-      if (!gitIgnoreField.hidden) gitIgnore.checked = true;
+      gitDescriptionField.hidden = gitAction !== "remote"
+      if (!gitDescriptionField.hidden) gitDescription.value = ""
+      gitPagesField.hidden = gitAction !== "remote"
+      if (!gitPagesField.hidden) gitPages.checked = false
+      gitIgnoreField.hidden = gitAction !== "init" || !!detail.has_gitignore
+      if (!gitIgnoreField.hidden) gitIgnore.checked = true
 
-      var notes = [];
-      if (!canWrite) notes.push("Git actions are disabled. Start ribbon.py on 127.0.0.1.");
+      const notes = extra ? [ extra ] : []
+      if (!canWrite) notes.push("Git actions are disabled. Start ribbon.py on 127.0.0.1.")
       if ((gitAction === "commit" || gitAction === "init") && detail.repo && detail.identity_ok === false) {
         notes.push(
           'Set your Git name and email first:\n  git config --global user.name "Your Name"\n  git config --global user.email "you@example.com"'
-        );
+        )
       }
       if (gitAction === "remote" && detail.gh === false) {
-        notes.push("GitHub CLI (gh) is not installed. Install it, or add a remote by hand.");
+        notes.push("GitHub CLI (gh) is not installed. Install it, or add a remote by hand.")
       }
-      if (detail.state === "detached") notes.push("You are on a detached HEAD. Switch to a branch first.");
-      if (detail.state === "conflicted") notes.push("Resolve the merge conflicts, then try again.");
-      if (detail.state === "diverged") notes.push("Local and remote have diverged. Pull or rebase before pushing.");
+      if (gitAction === "pages" && detail.gh === false) {
+        notes.push("GitHub CLI (gh) is not installed. Install it to publish with Pages.")
+      }
+      if (gitAction === "pages") {
+        notes.push("This enables GitHub Pages for the current branch and sets the Pages address as the repo homepage.")
+      }
+      if (detail.state === "detached") notes.push("You are on a detached HEAD. Switch to a branch first.")
+      if (detail.state === "conflicted") notes.push("Resolve the merge conflicts, then try again.")
+      if (detail.state === "diverged") notes.push("Local and remote have diverged. Pull or rebase before pushing.")
       if (detail.state === "behind" && gitAction === "info") {
-        notes.push("The remote has commits you do not have yet.");
+        notes.push("The remote has commits you do not have yet.")
       }
-      if (gitAction === "info" && !notes.length) notes.push("Everything is in order.");
-      gitNote.textContent = notes.join("\n\n");
-      gitNote.hidden = notes.length === 0;
+      if (gitAction === "info" && !notes.length) notes.push("Everything is in order.")
+      gitNote.textContent = notes.join("\n\n")
+      gitNote.hidden = notes.length === 0
 
-      gitOutput.hidden = true;
-      gitOutput.textContent = "";
-      gitStatus.className = "git-status" + (success ? " is-good" : "");
-      gitStatus.textContent = success || "";
+      gitOutput.hidden = true
+      gitOutput.textContent = ""
+      gitStatus.className = "git-status" + (success ? " is-good" : "")
+      gitStatus.textContent = success || ""
 
       gitBlocked =
         !canWrite ||
         detail.identity_ok === false && (gitAction === "commit" || gitAction === "init") ||
-        gitAction === "remote" && detail.gh === false;
-      gitPrimary.textContent = labels[gitAction] || "";
-      gitPrimary.hidden = !labels[gitAction];
-      gitPrimary.disabled = gitBlocked;
-      gitCancel.textContent = gitAction === "info" ? "Close" : "Cancel";
-      gitCancel.disabled = false;
-      gitClose.disabled = false;
+        (gitAction === "remote" || gitAction === "pages") && detail.gh === false
+      gitPrimary.textContent = labels[gitAction] || ""
+      gitPrimary.hidden = !labels[gitAction]
+      gitPrimary.disabled = gitBlocked
+      gitCancel.textContent = gitAction === "info" ? "Close" : "Cancel"
+      gitCancel.disabled = false
+      gitClose.disabled = false
 
-      if (gitAction === "commit" || gitAction === "init") gitMessage.focus();
-      else if (gitAction === "remote") gitName.focus();
-      else if (gitAction === "push") gitPrimary.focus();
-      else gitCancel.focus();
+      if (gitAction === "commit" || gitAction === "init") gitMessage.focus()
+      else if (gitAction === "remote") gitName.focus()
+      else if (gitAction === "push" || gitAction === "pages") gitPrimary.focus()
+      else gitCancel.focus()
     }
 
     function openGitPanel(focus) {
-      var app = currentApp();
-      if (!app || !gitOverlay.hidden) return;
-      closeMenu(false);
-      closeTip();
-      gitReturnFocus = document.activeElement;
-      gitOverlay.hidden = false;
-      gitBusy = false;
-      gitStatus.className = "git-status";
-      gitStatus.textContent = "";
-      gitOutput.hidden = true;
-      gitOutput.textContent = "";
-      gitTitle.textContent = "Checking Git…";
-      gitSummary.textContent = "";
-      gitFiles.hidden = true;
-      gitWarnings.hidden = true;
-      gitNote.hidden = true;
-      gitMessageField.hidden = true;
-      gitNameField.hidden = true;
-      gitVisibilityField.hidden = true;
-      gitIgnoreField.hidden = true;
-      gitPrimary.hidden = true;
+      const app = currentApp()
+      if (!app || !gitOverlay.hidden) return
+      closeMenu(false)
+      closeTip()
+      gitReturnFocus = document.activeElement
+      gitOverlay.hidden = false
+      gitBusy = false
+      gitStatus.className = "git-status"
+      gitStatus.textContent = ""
+      gitOutput.hidden = true
+      gitOutput.textContent = ""
+      gitTitle.textContent = "Checking Git…"
+      gitSummary.textContent = ""
+      gitFiles.hidden = true
+      gitWarnings.hidden = true
+      gitNote.hidden = true
+      gitMessageField.hidden = true
+      gitNameField.hidden = true
+      gitVisibilityField.hidden = true
+      gitDescriptionField.hidden = true
+      gitPagesField.hidden = true
+      gitIgnoreField.hidden = true
+      gitPrimary.hidden = true
 
       if (location.protocol !== "http:" && location.protocol !== "https:") {
-        renderGitUnavailable("Start the ribbon server to use Git actions.");
-        return;
+        renderGitUnavailable("Start the ribbon server to use Git actions.")
+        return
       }
 
-      var dir = app.path || app.dir || "";
+      const dir = app.path || app.dir || ""
       fetch("/__ribbon/git.json?dir=" + encodeURIComponent(dir), { cache: "no-store" })
         .then(function (response) {
-          if (!response.ok) throw new Error("HTTP " + response.status);
-          return response.json();
+          if (!response.ok) throw new Error("HTTP " + response.status)
+          return response.json()
         })
         .then(function (detail) {
-          setGit(detail);
-          if (currentApp()) currentApp().git = detail;
-          renderGitPanel(detail, focus, "");
+          setGit(detail)
+          if (currentApp()) currentApp().git = detail
+          renderGitPanel(detail, focus, "")
         })
         .catch(function (error) {
-          renderGitUnavailable("Could not read Git status: " + (error.message || error));
-        });
+          renderGitUnavailable("Could not read Git status: " + (error.message || error))
+        })
     }
 
     function closeGitPanel() {
-      if (gitBusy) return;
-      gitOverlay.hidden = true;
-      gitDetail = null;
-      gitAction = null;
+      if (gitBusy) return
+      gitOverlay.hidden = true
+      gitDetail = null
+      gitAction = null
       if (gitReturnFocus && gitReturnFocus.focus) {
         try {
-          gitReturnFocus.focus();
-        } catch (_) {}
+          gitReturnFocus.focus()
+        } catch (_) { /* target may be gone */ }
       }
-      gitReturnFocus = null;
+      gitReturnFocus = null
     }
 
     function setGitBusy(busy) {
-      gitBusy = busy;
-      gitPrimary.disabled = busy || gitBlocked;
-      gitCancel.disabled = busy;
-      gitClose.disabled = busy;
+      gitBusy = busy
+      gitPrimary.disabled = busy || gitBlocked
+      gitCancel.disabled = busy
+      gitClose.disabled = busy
       if (busy) {
-        gitPrimary.textContent = "Working…";
+        gitPrimary.textContent = "Working…"
       } else if (gitAction) {
-        var labels = {
+        const labels = {
           init: "Create repo + commit",
           commit: "Commit changes",
           push: "Push commits",
-          remote: "Create repo + push"
-        };
-        gitPrimary.textContent = labels[gitAction] || "Continue";
+          remote: "Create repo + push",
+          pages: "Publish to GitHub Pages"
+        }
+        gitPrimary.textContent = labels[gitAction] || "Continue"
       }
     }
 
     function showGitError(data) {
-      var error = (data && (data.error || data.message)) || "The Git action failed.";
-      var output = (data && data.output) || "";
-      gitStatus.className = "git-status is-bad";
-      gitStatus.textContent = error.split("\n")[0].slice(0, 140);
-      gitOutput.textContent = [error, output].filter(Boolean).join("\n\n");
-      gitOutput.hidden = !gitOutput.textContent;
+      const error = (data && (data.error || data.message)) || "The Git action failed."
+      const output = (data && data.output) || ""
+      gitStatus.className = "git-status is-bad"
+      gitStatus.textContent = error.split("\n")[0].slice(0, 140)
+      gitOutput.textContent = [ error, output ].filter(Boolean).join("\n\n")
+      gitOutput.hidden = !gitOutput.textContent
     }
 
     function submitGitAction() {
-      if (gitBusy || !gitAction) return;
-      var app = currentApp();
-      if (!app) return;
+      if (gitBusy || !gitAction) return
+      const app = currentApp()
+      if (!app) return
 
-      var payload = { action: gitAction, dir: app.path || app.dir || "" };
+      const payload = { action: gitAction, dir: app.path || app.dir || "" }
       if (gitAction === "init" || gitAction === "commit") {
-        payload.message = gitMessage.value.trim();
+        payload.message = gitMessage.value.trim()
         if (!payload.message) {
-          gitMessage.focus();
-          return;
+          gitMessage.focus()
+          return
         }
       }
-      if (gitAction === "init") payload.gitignore = gitIgnore.checked;
+      if (gitAction === "init") payload.gitignore = gitIgnore.checked
       if (gitAction === "remote") {
-        payload.name = gitName.value.trim();
+        payload.name = gitName.value.trim()
         if (!payload.name) {
-          gitName.focus();
-          return;
+          gitName.focus()
+          return
         }
-        var checked = shadow.querySelector('input[name="git-visibility"]:checked');
-        payload.visibility = checked ? checked.value : "private";
+        const checked = shadow.querySelector('input[name="git-visibility"]:checked')
+        payload.visibility = checked ? checked.value : "private"
+        payload.description = gitDescription.value.trim()
+        payload.pages = gitPages.checked
       }
 
-      setGitBusy(true);
-      gitStatus.className = "git-status";
-      gitStatus.textContent = "Working…";
-      gitOutput.hidden = true;
-      gitOutput.textContent = "";
+      setGitBusy(true)
+      gitStatus.className = "git-status"
+      gitStatus.textContent = "Working…"
+      gitOutput.hidden = true
+      gitOutput.textContent = ""
 
       fetch("/__ribbon/git", {
         method: "POST",
@@ -1548,80 +1581,90 @@
         .then(function (response) {
           return response.json()
             .catch(function () {
-              return { ok: false, error: "Unexpected response from the server." };
+              return { ok: false, error: "Unexpected response from the server." }
             })
             .then(function (data) {
-              data.statusCode = response.status;
-              return data;
-            });
+              data.statusCode = response.status
+              return data
+            })
         })
         .then(function (data) {
           if (!data || !data.ok) {
-            setGitBusy(false);
-            showGitError(data);
-            return;
+            setGitBusy(false)
+            showGitError(data)
+            return
           }
           if (data.status) {
-            setGit(data.status);
-            if (currentApp()) currentApp().git = data.status;
+            setGit(data.status)
+            if (currentApp()) currentApp().git = data.status
           }
-          var message = {
+          let message = {
             init: "Repository created and first commit made.",
             commit: "Changes committed.",
             push: "Commits pushed.",
-            remote: "GitHub repo created and pushed."
-          }[payload.action] || "Done.";
-          setGitBusy(false);
-          renderGitPanel(data.status || gitDetail, null, message);
+            remote: "GitHub repo created and pushed.",
+            pages: "GitHub Pages is on."
+          }[payload.action] || "Done."
+          let extra = ""
+          if (payload.action === "remote" || payload.action === "pages") {
+            if (data.pages_url) {
+              extra = "GitHub Pages: " + data.pages_url
+              if (data.pages_error) extra += "\n" + data.pages_error
+            } else if (payload.pages && data.pages_error) {
+              message = "GitHub repo created, but Pages setup failed."
+              extra = data.pages_error
+            }
+          }
+          setGitBusy(false)
+          renderGitPanel(data.status || gitDetail, null, message, extra)
         })
         .catch(function (error) {
-          setGitBusy(false);
-          showGitError({ error: error.message || "The request failed." });
-        });
+          setGitBusy(false)
+          showGitError({ error: error.message || "The request failed." })
+        })
     }
 
     function setGit(git) {
-      currentGit = git || null;
-      var repo = !!(git && git.repo);
-      var state = (git && git.state) || "";
-      var dirty = !!(git && (git.dirty || (git.files && git.files.length)));
-      var count = git && typeof git.dirty_count === "number" ? git.dirty_count : dirty ? 1 : 0;
-      var hasRemote = !!(git && git.has_remote);
-      var repoClass = repo ? "ok" : "off";
-      var changesClass = !repo ? "off" : dirty ? "warn" : "ok";
-      var remoteClass = "off";
+      const repo = !!(git && git.repo)
+      const state = (git && git.state) || ""
+      const dirty = !!(git && (git.dirty || (git.files && git.files.length)))
+      const count = git && typeof git.dirty_count === "number" ? git.dirty_count : dirty ? 1 : 0
+      const hasRemote = !!(git && git.has_remote)
+      const repoClass = repo ? "ok" : "off"
+      const changesClass = !repo ? "off" : dirty ? "warn" : "ok"
+      let remoteClass = "off"
       if (repo && hasRemote) {
         if (state === "ahead" || state === "diverged" || state === "conflicted") {
-          remoteClass = "bad";
+          remoteClass = "bad"
         } else if (
           state === "behind" ||
           state === "no-upstream" ||
           state === "detached" ||
           state === "no-commits"
         ) {
-          remoteClass = "warn";
+          remoteClass = "warn"
         } else {
-          remoteClass = "ok";
+          remoteClass = "ok"
         }
       }
 
-      ledRepo.className = "led " + repoClass;
-      ledChanges.className = "led " + changesClass;
-      ledRemote.className = "led " + remoteClass;
-      tipRepoDot.className = "led " + repoClass;
-      tipChangesDot.className = "led " + changesClass;
-      tipRemoteDot.className = "led " + remoteClass;
+      ledRepo.className = "led " + repoClass
+      ledChanges.className = "led " + changesClass
+      ledRemote.className = "led " + remoteClass
+      tipRepoDot.className = "led " + repoClass
+      tipChangesDot.className = "led " + changesClass
+      tipRemoteDot.className = "led " + remoteClass
 
-      var repoText = repoTip(git);
-      var changesText = changesTip(git, dirty, count);
-      var remoteText = remoteTip(git, hasRemote);
-      tipRepoText.textContent = repoText;
-      tipChangesText.textContent = changesText;
-      tipRemoteText.textContent = remoteText;
-      ledsWrap.setAttribute("aria-label", repoText + ". " + changesText + ". " + remoteText);
+      const repoText = repoTip(git)
+      const changesText = changesTip(git, dirty, count)
+      const remoteText = remoteTip(git, hasRemote)
+      tipRepoText.textContent = repoText
+      tipChangesText.textContent = changesText
+      tipRemoteText.textContent = remoteText
+      ledsWrap.setAttribute("aria-label", repoText + ". " + changesText + ". " + remoteText)
 
-      setLedLabel("repo", repoText, repo ? "Click for Git actions" : "Click to create a repository");
-      setLedLabel("changes", changesText, dirty ? "Click to commit" : "Nothing to commit");
+      setLedLabel("repo", repoText, repo ? "Click for Git actions" : "Click to create a repository")
+      setLedLabel("changes", changesText, dirty ? "Click to commit" : "Nothing to commit")
       setLedLabel(
         "remote",
         remoteText,
@@ -1629,16 +1672,18 @@
           ? "Click to create a remote"
           : git && git.ahead
             ? "Click to push"
-            : "Remote status"
-      );
+            : git && git.state === "clean" && /github\.com[:/]/i.test(git.remote_url || "")
+              ? "Click to publish with Pages"
+              : "Remote status"
+      )
     }
 
     function setLedLabel(name, text, hint) {
-      for (var i = 0; i < ledButtons.length; i += 1) {
+      for (let i = 0; i < ledButtons.length; i += 1) {
         if (ledButtons[i].getAttribute("data-led") === name) {
-          ledButtons[i].setAttribute("aria-label", text + ". " + hint);
-          ledButtons[i].title = text + " — " + hint;
-          return;
+          ledButtons[i].setAttribute("aria-label", text + ". " + hint)
+          ledButtons[i].title = text + " — " + hint
+          return
         }
       }
     }
@@ -1647,332 +1692,332 @@
       if (!git || !git.repo) {
         return git && git.state === "error"
           ? "Git status unavailable"
-          : "Not a Git repository";
+          : "Not a Git repository"
       }
-      return "Git repository" + (git.branch ? " — " + git.branch : "");
+      return "Git repository" + (git.branch ? " — " + git.branch : "")
     }
 
     function changesTip(git, dirty, count) {
-      if (!git || !git.repo) return "No changes to track";
+      if (!git || !git.repo) return "No changes to track"
       if (dirty) {
-        var n = count || 1;
-        return n + " uncommitted file" + (n === 1 ? "" : "s");
+        const n = count || 1
+        return n + " uncommitted file" + (n === 1 ? "" : "s")
       }
-      return git.state === "no-commits" ? "No commits yet" : "No uncommitted changes";
+      return git.state === "no-commits" ? "No commits yet" : "No uncommitted changes"
     }
 
     function remoteTip(git, hasRemote) {
-      if (!git || !git.repo) return "No remote";
-      if (!hasRemote) return "No remote";
-      if (git.state === "conflicted") return "Conflicts to resolve";
-      if (git.state === "no-commits") return "No commits yet";
-      if (git.state === "detached") return "Detached HEAD";
-      var bits = [];
-      if (git.ahead) bits.push(git.ahead + " to push");
-      if (git.behind) bits.push(git.behind + " behind");
-      if (bits.length) return bits.join(" · ");
-      if (git.state === "no-upstream") return "Remote set, no upstream";
-      return "Up to date" + (git.upstream ? " with " + git.upstream : "");
+      if (!git || !git.repo) return "No remote"
+      if (!hasRemote) return "No remote"
+      if (git.state === "conflicted") return "Conflicts to resolve"
+      if (git.state === "no-commits") return "No commits yet"
+      if (git.state === "detached") return "Detached HEAD"
+      const bits = []
+      if (git.ahead) bits.push(git.ahead + " to push")
+      if (git.behind) bits.push(git.behind + " behind")
+      if (bits.length) return bits.join(" · ")
+      if (git.state === "no-upstream") return "Remote set, no upstream"
+      return "Up to date" + (git.upstream ? " with " + git.upstream : "")
     }
 
     function openTip(pin) {
-      if (pin) tipPinned = true;
-      ledTip.classList.add("is-open");
-      ledTip.setAttribute("aria-hidden", "false");
+      if (pin) tipPinned = true
+      ledTip.classList.add("is-open")
+      ledTip.setAttribute("aria-hidden", "false")
       if (tipTimer) {
-        clearTimeout(tipTimer);
-        tipTimer = 0;
+        clearTimeout(tipTimer)
+        tipTimer = 0
       }
       if (!hoverCapable && tipPinned) {
-        tipTimer = setTimeout(closeTip, 5000);
+        tipTimer = setTimeout(closeTip, 5000)
       }
     }
 
     function closeTip() {
-      tipPinned = false;
-      ledTip.classList.remove("is-open");
-      ledTip.setAttribute("aria-hidden", "true");
+      tipPinned = false
+      ledTip.classList.remove("is-open")
+      ledTip.setAttribute("aria-hidden", "true")
       if (tipTimer) {
-        clearTimeout(tipTimer);
-        tipTimer = 0;
+        clearTimeout(tipTimer)
+        tipTimer = 0
       }
     }
 
     function closeTipIfUnpinned() {
-      if (!tipPinned) closeTip();
+      if (!tipPinned) closeTip()
     }
 
     shadow.addEventListener("click", function (event) {
-      var button = event.target && event.target.closest
+      const button = event.target && event.target.closest
         ? event.target.closest("button[data-act]")
-        : null;
-      if (!button) return;
-      var action = button.getAttribute("data-act");
-      if (action === "prev") go(-1);
-      else if (action === "next") go(1);
-      else if (action === "random") random();
-      else if (action === "reload") reloadApp();
-      else if (action === "hide") setManual(true);
-    });
+        : null
+      if (!button) return
+      const action = button.getAttribute("data-act")
+      if (action === "prev") go(-1)
+      else if (action === "next") go(1)
+      else if (action === "random") random()
+      else if (action === "reload") reloadApp()
+      else if (action === "hide") setManual(true)
+    })
     peekEl.addEventListener("click", function () {
-      setManual(false);
-    });
+      setManual(false)
+    })
 
-    titleButton.addEventListener("click", toggleMenu);
+    titleButton.addEventListener("click", toggleMenu)
     starCurrent.addEventListener("click", function () {
-      var app = currentApp();
-      if (app) toggleFavorite(app, false);
-      starCurrent.focus();
-    });
+      const app = currentApp()
+      if (app) toggleFavorite(app, false)
+      starCurrent.focus()
+    })
     searchInput.addEventListener("input", function () {
-      renderMenu(searchInput.value);
-    });
+      renderMenu(searchInput.value)
+    })
     searchInput.addEventListener("keydown", function (event) {
       if (event.key === "Escape") {
-        event.preventDefault();
-        closeMenu(true);
-        return;
+        event.preventDefault()
+        closeMenu(true)
+        return
       }
       if (event.key === "Enter") {
-        var first = menuEl.querySelector(".menu-app");
+        const first = menuEl.querySelector(".menu-app")
         if (first) {
-          event.preventDefault();
-          location.assign(apps[Number(first.getAttribute("data-app"))].url);
+          event.preventDefault()
+          location.assign(apps[Number(first.getAttribute("data-app"))].url)
         }
-        return;
+        return
       }
       if (event.key === "ArrowDown") {
-        var first = menuEl.querySelector(".menu-app");
+        const first = menuEl.querySelector(".menu-app")
         if (first) {
-          event.preventDefault();
-          first.focus();
+          event.preventDefault()
+          first.focus()
         }
       }
-    });
+    })
     menuEl.addEventListener("click", function (event) {
-      var star = event.target && event.target.closest
+      const star = event.target && event.target.closest
         ? event.target.closest(".row-star")
-        : null;
+        : null
       if (star) {
-        for (var i = 0; i < apps.length; i += 1) {
+        for (let i = 0; i < apps.length; i += 1) {
           if (appKey(apps[i]) === star.getAttribute("data-star")) {
-            toggleFavorite(apps[i], true);
-            break;
+            toggleFavorite(apps[i], true)
+            break
           }
         }
-        return;
+        return
       }
 
-      var row = event.target && event.target.closest
+      const row = event.target && event.target.closest
         ? event.target.closest(".menu-app")
-        : null;
+        : null
       if (row) {
-        location.assign(apps[Number(row.getAttribute("data-app"))].url);
+        location.assign(apps[Number(row.getAttribute("data-app"))].url)
       }
-    });
+    })
     document.addEventListener("pointerdown", function (event) {
-      if (!menuOpen) return;
-      var path = event.composedPath ? event.composedPath() : [];
-      if (path.indexOf(menuEl) !== -1 || path.indexOf(titleButton) !== -1) return;
-      closeMenu(false);
-    }, true);
+      if (!menuOpen) return
+      const path = event.composedPath ? event.composedPath() : []
+      if (path.indexOf(menuEl) !== -1 || path.indexOf(titleButton) !== -1) return
+      closeMenu(false)
+    }, true)
 
     ledsWrap.addEventListener("click", function (event) {
-      var button = event.target && event.target.closest
+      const button = event.target && event.target.closest
         ? event.target.closest(".led-btn")
-        : null;
-      if (!button) return;
-      event.stopPropagation();
-      openGitPanel(button.getAttribute("data-led"));
-    });
+        : null
+      if (!button) return
+      event.stopPropagation()
+      openGitPanel(button.getAttribute("data-led"))
+    })
     ledsWrap.addEventListener("pointerenter", function () {
-      if (hoverCapable) openTip(false);
-    });
-    ledsWrap.addEventListener("pointerleave", closeTipIfUnpinned);
-    for (var b = 0; b < ledButtons.length; b += 1) {
+      if (hoverCapable) openTip(false)
+    })
+    ledsWrap.addEventListener("pointerleave", closeTipIfUnpinned)
+    for (let b = 0; b < ledButtons.length; b += 1) {
       ledButtons[b].addEventListener("focus", function () {
-        openTip(false);
-      });
-      ledButtons[b].addEventListener("blur", closeTipIfUnpinned);
+        openTip(false)
+      })
+      ledButtons[b].addEventListener("blur", closeTipIfUnpinned)
     }
 
-    gitCancel.addEventListener("click", closeGitPanel);
-    gitClose.addEventListener("click", closeGitPanel);
-    gitPrimary.addEventListener("click", submitGitAction);
+    gitCancel.addEventListener("click", closeGitPanel)
+    gitClose.addEventListener("click", closeGitPanel)
+    gitPrimary.addEventListener("click", submitGitAction)
     gitOverlay.addEventListener("pointerdown", function (event) {
-      if (event.target === gitOverlay) closeGitPanel();
-    });
+      if (event.target === gitOverlay) closeGitPanel()
+    })
     gitOverlay.addEventListener("keydown", function (event) {
       if (event.key === "Escape") {
-        event.preventDefault();
-        closeGitPanel();
+        event.preventDefault()
+        closeGitPanel()
       }
-    });
+    })
     document.addEventListener("pointerdown", function (event) {
-      if (!ledTip.classList.contains("is-open")) return;
-      var path = event.composedPath ? event.composedPath() : [];
-      if (path.indexOf(ledWrap) !== -1) return;
-      closeTip();
-    }, true);
+      if (!ledTip.classList.contains("is-open")) return
+      const path = event.composedPath ? event.composedPath() : []
+      if (path.indexOf(ledWrap) !== -1) return
+      closeTip()
+    }, true)
 
-    var pending = null;
+    let pending = null
     function processScroll() {
-      var event = pending;
-      pending = null;
-      if (manualHidden) return;
-      if (event && event.target && menuEl.contains(event.target)) return;
+      const event = pending
+      pending = null
+      if (manualHidden) return
+      if (event && event.target && menuEl.contains(event.target)) return
 
-      var target = event && event.target;
+      let target = event && event.target
       if (
         target === document ||
         target === window ||
         target === document.documentElement ||
         target === document.body
       ) {
-        target = null;
+        target = null
       }
-      var y = target ? target.scrollTop : scrollY();
-      var hasPrevious = lastTargets.has(target);
-      var previous = hasPrevious ? lastTargets.get(target) : y;
-      var delta = y - previous;
+      const y = target ? target.scrollTop : scrollY()
+      const hasPrevious = lastTargets.has(target)
+      const previous = hasPrevious ? lastTargets.get(target) : y
+      const delta = y - previous
 
       if (Math.abs(delta) < 10) {
-        if (!hasPrevious) lastTargets.set(target, y);
-        return;
+        if (!hasPrevious) lastTargets.set(target, y)
+        return
       }
 
-      if (y <= 8) autoHidden = false;
-      else if (delta > 0 && y > 48) autoHidden = true;
-      else if (delta < 0) autoHidden = false;
+      if (y <= 8) autoHidden = false
+      else if (delta > 0 && y > 48) autoHidden = true
+      else if (delta < 0) autoHidden = false
 
-      lastTargets.set(target, y);
-      applyState();
+      lastTargets.set(target, y)
+      applyState()
     }
 
     function onScroll(event) {
-      if (pending) return;
-      pending = event;
-      requestAnimationFrame(processScroll);
+      if (pending) return
+      pending = event
+      requestAnimationFrame(processScroll)
     }
 
     window.addEventListener("keydown", function (event) {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-      var target = event.target;
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target
       if (
         target &&
         (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
       ) {
-        return;
+        return
       }
 
-      var key = event.key;
+      const key = event.key
       if (!gitOverlay.hidden) {
         if (key === "Escape") {
-          closeGitPanel();
-          event.preventDefault();
-          event.stopPropagation();
+          closeGitPanel()
+          event.preventDefault()
+          event.stopPropagation()
         }
-        return;
+        return
       }
       if (key === "Escape" && menuOpen) {
-        closeMenu(true);
-        event.preventDefault();
-        event.stopPropagation();
-        return;
+        closeMenu(true)
+        event.preventDefault()
+        event.stopPropagation()
+        return
       }
       if (key === "/") {
-        openMenu();
-        event.preventDefault();
-        event.stopPropagation();
-        return;
+        openMenu()
+        event.preventDefault()
+        event.stopPropagation()
+        return
       }
-      if (menuOpen) return;
+      if (menuOpen) return
       if (key === "Escape" && ledTip.classList.contains("is-open")) {
-        closeTip();
-        event.preventDefault();
-        event.stopPropagation();
-        return;
+        closeTip()
+        event.preventDefault()
+        event.stopPropagation()
+        return
       }
 
-      var handled = true;
-      if (key === "[") go(-1);
-      else if (key === "]") go(1);
+      let handled = true
+      if (key === "[") go(-1)
+      else if (key === "]") go(1)
       else if (key === "r" || key === "R") {
-        if (event.shiftKey) reloadApp();
-        else random();
-      } else if (key === "h" || key === "H") toggleHidden();
-      else handled = false;
+        if (event.shiftKey) reloadApp()
+        else random()
+      } else if (key === "h" || key === "H") toggleHidden()
+      else handled = false
 
       if (handled) {
-        event.preventDefault();
-        event.stopPropagation();
+        event.preventDefault()
+        event.stopPropagation()
       }
-    }, true);
+    }, true)
 
     function toggleHidden() {
       if (!manualHidden && autoHidden) {
-        autoHidden = false;
-        applyState();
-        return;
+        autoHidden = false
+        applyState()
+        return
       }
-      setManual(!manualHidden);
+      setManual(!manualHidden)
     }
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    document.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    window.addEventListener("scroll", onScroll, { passive: true })
+    document.addEventListener("scroll", onScroll, { passive: true, capture: true })
 
     window.__ribbon = {
-      show: function () { setManual(false); },
-      hide: function () { setManual(true); },
-      toggle: function () { toggleHidden(); },
-      prev: function () { go(-1); },
-      next: function () { go(1); },
+      show: function () { setManual(false) },
+      hide: function () { setManual(true) },
+      toggle: function () { toggleHidden() },
+      prev: function () { go(-1) },
+      next: function () { go(1) },
       random: random,
       apps: apps
-    };
+    }
 
-    applyState();
-    document.documentElement.appendChild(host);
+    applyState()
+    document.documentElement.appendChild(host)
   }
 
   function normalizePath(path) {
-    var value = path;
+    let value = path
     try {
-      value = decodeURIComponent(path);
-    } catch (_) {}
-    value = value.replace(/\/index\.html?$/i, "/");
+      value = decodeURIComponent(path)
+    } catch (_) { /* use the path as given */ }
+    value = value.replace(/\/index\.html?$/i, "/")
     if (value.charAt(value.length - 1) !== "/" && !/\.[a-z0-9]+$/i.test(value)) {
-      value += "/";
+      value += "/"
     }
-    return value;
+    return value
   }
 
   function entryPath(app) {
     try {
-      return new URL(app.url, location.href).pathname;
+      return new URL(app.url, location.href).pathname
     } catch (_) {
-      return app.url;
+      return app.url
     }
   }
 
   function pad(number, total) {
-    var width = String(total).length;
-    var value = String(number);
-    while (value.length < width) value = "0" + value;
-    return value;
+    const width = String(total).length
+    let value = String(number)
+    while (value.length < width) value = "0" + value
+    return value
   }
 
   function readHidden() {
     try {
-      return sessionStorage.getItem(STORAGE_KEY) === "1";
+      return sessionStorage.getItem(STORAGE_KEY) === "1"
     } catch (_) {
-      return false;
+      return false
     }
   }
 
   function scrollY() {
-    return window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+    return window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
   }
 
-  boot();
-})();
+  boot()
+})()

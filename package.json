@@ -1,0 +1,19 @@
+{
+  "name": "ribbon",
+  "private": true,
+  "type": "module",
+  "description": "A little bar at the top of your screen for switching between local apps.",
+  "scripts": {
+    "lint": "eslint . && stylelint \"index.html\""
+  },
+  "devDependencies": {
+    "@37signals/eslint-config": "file:/home/mrjohn/Work/tries/2026-11-03-house-style/house-style/eslint-config",
+    "@37signals/stylelint-config-scss": "file:/home/mrjohn/Work/tries/2026-11-03-house-style/house-style/stylelint-config-scss",
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "postcss-html": "^1.8.0",
+    "stylelint": "^17.16.0"
+  }
+}

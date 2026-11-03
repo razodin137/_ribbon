@@ -132,7 +132,7 @@ grown-ups use to save and back up versions of their work.
 | --- | --- | --- |
 | Left | Green: this folder is saved in Git. Dark: it is not. | Create a repository. |
 | Middle | Green: nothing new to save. Yellow: unsaved changes. | Commit the changes. |
-| Right | Green: backed up. Yellow: not pushed. Red: commits waiting. Dark: no remote. | Push or create a remote. |
+| Right | Green: backed up. Yellow: not pushed. Red: commits waiting. Dark: no remote. | Push, create a remote, or publish to GitHub Pages. |
 
 Hover over a light to read exactly what is going on.
 
@@ -145,8 +145,13 @@ the button in that panel.
 - **Commit** stages every changed file and saves it with your message.
 - **Push** sends your commits to the remote.
 - **Create a remote** uses the GitHub CLI (`gh`) to make a **private**
-  repository and push. You can choose Public instead. Run
-  `gh auth login` once before using this.
+  repository and push. You can choose Public instead, add a description,
+  and tick **Publish with GitHub Pages** to turn on Pages for the repo and
+  set the new Pages address as its homepage. Run `gh auth login` once before
+  using this. On GitHub's free plan, Pages needs a public repository.
+- **Publish to GitHub Pages** does the same for a repository that already
+  has a remote. Click the right-hand light when everything is pushed. Pages
+  uses the current branch and the repository root.
 
 Two safety notes:
 
@@ -169,6 +174,7 @@ Use `--no-git-actions` if you want the lights but not the buttons.
 | The address is already in use | Ribbon tries the next port by itself. It tells you which one it picked. |
 | The Git buttons are greyed out | Start Ribbon on `127.0.0.1` without `--no-git-actions`. Opening the page as a file cannot run Git. |
 | **Create a remote** fails | Run `gh auth login`, and check that the repository name is not already taken. |
+| **Publish with GitHub Pages** fails | Pages needs a public repo on the free plan. Check that the default branch contains an `index.html`. |
 | Git says there is nothing to commit | The app was refreshed before the last file change. Close the panel and open it again. |
 | You forgot the commands | Run `python3 _ribbon/ribbon.py --help`. |
 
@@ -190,16 +196,29 @@ python3 _ribbon/ribbon.py --help           # all options, with examples
 
 ## For the very curious
 
-The folder has four small pieces:
+The folder has six small pieces:
 
 ```
 _ribbon/
   index.html  the no-server page: bar + big window
+  boot.js     the tiny check that restores a hidden bar on load
+  shell.js    the bar and window used by the no-server page
   apps.js     the list that page uses (made by --write-apps)
   ribbon.py   finds the apps, serves them, and adds the bar
-  ribbon.js   the bar itself
+  ribbon.js   the bar itself, for the server version
 ```
 
 The server does not change your pages. The bar is added only while a page
 is being sent to your browser. Git actions do change the repository, but
 only after you press a button and confirm what will be included.
+
+### Checking the code
+
+The JavaScript and the styles follow the 37signals house style, enforced
+by ESLint and Stylelint. Install the tools once, then run the checker:
+
+```bash
+cd _ribbon
+npm install
+npm run lint
+```

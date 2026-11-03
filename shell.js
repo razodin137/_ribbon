@@ -40,6 +40,8 @@
   const gitVisibilityInputs = document.querySelectorAll('input[name="git-visibility"]')
   const gitDescriptionField = document.getElementById("git-description-field")
   const gitDescription = document.getElementById("git-description")
+  const gitReadmeField = document.getElementById("git-readme-field")
+  const gitReadme = document.getElementById("git-readme")
   const gitPagesField = document.getElementById("git-pages-field")
   const gitPages = document.getElementById("git-pages")
   const gitIgnoreField = document.getElementById("git-ignore-field")
@@ -753,6 +755,7 @@
     gitNameField.hidden = true
     gitVisibilityField.hidden = true
     gitDescriptionField.hidden = true
+    gitReadmeField.hidden = true
     gitPagesField.hidden = true
     gitIgnoreField.hidden = true
     gitNote.hidden = true
@@ -876,6 +879,13 @@
     }
     gitDescriptionField.hidden = gitAction !== "remote"
     if (!gitDescriptionField.hidden) gitDescription.value = ""
+    const readmeMissing = !(detail.readme && detail.readme.exists)
+    gitReadmeField.hidden = !(
+      (gitAction === "remote" || gitAction === "pages") && readmeMissing
+    )
+    if (!gitReadmeField.hidden) {
+      gitReadme.value = "# " + ((app && app.title) || "App") + "\n\n"
+    }
     gitPagesField.hidden = gitAction !== "remote"
     if (!gitPagesField.hidden) gitPages.checked = false
     gitIgnoreField.hidden = gitAction !== "init" || !!detail.has_gitignore
@@ -933,7 +943,8 @@
     gitCancel.disabled = false
     gitClose.disabled = false
 
-    if (gitAction === "commit" || gitAction === "init") gitMessage.focus()
+    if (!gitReadmeField.hidden) gitReadme.focus()
+    else if (gitAction === "commit" || gitAction === "init") gitMessage.focus()
     else if (gitAction === "remote") gitName.focus()
     else if (gitAction === "push" || gitAction === "pages" || gitAction === "pages-entry") gitPrimary.focus()
     else gitCancel.focus()
@@ -960,6 +971,7 @@
     gitNameField.hidden = true
     gitVisibilityField.hidden = true
     gitDescriptionField.hidden = true
+    gitReadmeField.hidden = true
     gitPagesField.hidden = true
     gitIgnoreField.hidden = true
     gitPrimary.hidden = true
@@ -1058,6 +1070,7 @@
       payload.description = gitDescription.value.trim()
       payload.pages = gitPages.checked
     }
+    if (!gitReadmeField.hidden) payload.readme = gitReadme.value
 
     setGitBusy(true)
     gitStatus.className = "git-status"
@@ -1110,6 +1123,9 @@
             message = "GitHub repo created, but Pages setup failed."
             extra = data.pages_error
           }
+        }
+        if (data.readme_written) {
+          extra = [ "README.md was committed and pushed.", extra ].filter(Boolean).join("\n")
         }
         setGitBusy(false)
         renderGitPanel(data.status || gitDetail, null, message, extra)

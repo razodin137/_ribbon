@@ -48,7 +48,8 @@ appears in the top right corner. Click it — or press **H** — to bring the
 bar back.
 
 The bar also hides itself when you scroll down, and comes back when you
-scroll up.
+scroll up. At the very top of the page it sits in its own strip, so the
+app's own header stays visible.
 
 ## Find any app fast
 
@@ -180,6 +181,12 @@ the button in that panel.
   uses the current branch and the repository root, so it needs an
   `index.html` there. If your page has another name, Ribbon offers to create
   an `index.html` that opens it; commit and push that file, then publish.
+
+If the folder has no README, both **Create a remote** and **Publish to
+GitHub Pages** offer a **README.md** box. Type a short introduction and
+Ribbon writes `README.md`, commits it, and pushes it before it creates or
+publishes the repository. Leave the box empty to skip it. An existing
+README is detected and never overwritten.
 
 Two safety notes:
 

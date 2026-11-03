@@ -42,6 +42,9 @@ VERSION = "1.2.0"
 HTML_SUFFIXES = (".html", ".htm")
 CARD_ROUTE = "/__ribbon/card/"
 PREFERRED_HTML = ("index.html", "app.html", "main.html", "home.html", "site.html", "start.html")
+README_NAMES = ("README.md", "readme.md", "README.markdown", "README.txt", "README", "README.rst")
+README_COMMIT_MESSAGE = "Add README"
+MAX_README_CHARS = 20000
 
 STATE_LABELS = {
     "clean": "all pushed",
@@ -192,15 +195,31 @@ def choose_html(filenames: list[str] | set[str]) -> str | None:
     return sorted(names, key=str.lower)[0]
 
 
-def read_readme(path: Path) -> str:
-    for name in ("README.md", "readme.md", "README.markdown", "README.txt", "README"):
+def find_readme(path: Path) -> Path | None:
+    """Return the folder's README file, if it has one."""
+    for name in README_NAMES:
         candidate = path / name
         if candidate.is_file():
-            try:
-                return candidate.read_text(encoding="utf-8", errors="replace")[:12000]
-            except OSError:
-                continue
+            return candidate
+    return None
+
+
+def read_readme(path: Path) -> str:
+    candidate = find_readme(path)
+    if candidate:
+        try:
+            return candidate.read_text(encoding="utf-8", errors="replace")[:12000]
+        except OSError:
+            pass
     return ""
+
+
+def readme_state(path: Path) -> dict:
+    found = find_readme(path)
+    return {
+        "exists": bool(found),
+        "name": found.name if found else "README.md",
+    }
 
 
 def clean_markdown(text: str) -> str:
@@ -289,7 +308,7 @@ def project_kind(path: Path, filenames: list[str]) -> dict | None:
     if js_files:
         entry = pick("index.js", "main.js", "server.js", "app.js") or js_files[0]
         return {"type": "Node", "icon": "JS", "run": f"node {entry}"}
-    if pick("readme.md", "readme.markdown", "readme.txt", "readme"):
+    if pick("readme.md", "readme.markdown", "readme.txt", "readme.rst", "readme"):
         return {"type": "Project", "icon": "MD", "run": ""}
     return None
 
@@ -590,6 +609,7 @@ def git_detail(path: Path) -> dict:
         "warnings": [],
         "identity_ok": identity_ok,
         "has_gitignore": (path / ".gitignore").is_file(),
+        "readme": readme_state(path),
         "gh": bool(shutil.which("gh")),
     }
     if not status.get("repo"):
@@ -628,6 +648,7 @@ def git_detail(path: Path) -> dict:
     detail["dirty_count"] = len(files)
     detail["warnings"] = file_warnings(root, files)
     detail["has_gitignore"] = (root / ".gitignore").is_file()
+    detail["readme"] = readme_state(root)
     detail["identity_ok"] = bool(_git_text(root, ["config", "user.name"])) and bool(
         _git_text(root, ["config", "user.email"])
     )
@@ -705,6 +726,84 @@ def _clean_message(value: object, fallback: str) -> str:
     return text[:2000] or fallback
 
 
+def _push_branch(root: Path, status: dict) -> tuple[bool, str]:
+    branch = _git_text(root, ["symbolic-ref", "--short", "-q", "HEAD"]) or status.get("branch")
+    if not branch or branch == "HEAD":
+        return False, "You are not on a branch."
+
+    upstream = _git_text(
+        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+    )
+    if upstream:
+        return _run_git_step(root, ["push"], 120)
+
+    remotes = status.get("remotes") or []
+    remote = "origin" if "origin" in remotes else (remotes[0] if remotes else "origin")
+    return _run_git_step(root, ["push", "-u", remote, branch], 120)
+
+
+def _add_readme(root: Path, text: object) -> dict:
+    """Write a new README.md and commit just that file."""
+    content = str(text or "")
+    if not content.strip():
+        result = _action_ok("")
+        result["readme_written"] = False
+        return result
+
+    problem = _identity_problem(root)
+    if problem:
+        return _action_error(problem)
+
+    if len(content) > MAX_README_CHARS:
+        return _action_error(
+            f"The README is too long. Keep it under {MAX_README_CHARS} characters."
+        )
+    if not content.endswith("\n"):
+        content += "\n"
+
+    existing = find_readme(root)
+    if existing:
+        if existing.name != "README.md":
+            result = _action_ok(f"{existing.name} already exists; left it unchanged.")
+            result["readme_written"] = False
+            return result
+        try:
+            current = existing.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return _action_error(f"Could not read README.md: {exc}")
+        if current != content:
+            result = _action_ok("README.md already exists; left it unchanged.")
+            result["readme_written"] = False
+            return result
+        written = "README.md is already present."
+    else:
+        try:
+            (root / "README.md").write_text(content, encoding="utf-8")
+        except OSError as exc:
+            return _action_error(f"Could not write README.md: {exc}")
+        written = "Wrote README.md."
+
+    ok, stage_output = _run_git_step(root, ["add", "--", "README.md"], 60)
+    if not ok:
+        return _action_error("Could not stage README.md.", stage_output)
+
+    staged = _git_text(root, ["diff", "--cached", "--name-only", "--", "README.md"])
+    if not staged.strip():
+        result = _action_ok(written)
+        result["readme_written"] = True
+        return result
+
+    ok, commit_output = _run_git_step(
+        root, ["commit", "-m", README_COMMIT_MESSAGE, "--", "README.md"], 60
+    )
+    output = "\n".join(part for part in (stage_output, commit_output) if part)
+    if not ok:
+        return _action_error("Could not commit README.md.", output)
+    result = _action_ok(output or "Wrote and committed README.md.")
+    result["readme_written"] = True
+    return result
+
+
 def git_init(target: Path, message: str, make_gitignore: bool) -> dict:
     existing = _git_text(target, ["rev-parse", "--show-toplevel"])
     if existing:
@@ -777,20 +876,7 @@ def git_push(target: Path) -> dict:
         return _action_error("There is no remote. Create one first.")
 
     root = _repo_root(target) or target
-    branch = _git_text(root, ["symbolic-ref", "--short", "-q", "HEAD"]) or status.get("branch")
-    if not branch or branch == "HEAD":
-        return _action_error("You are not on a branch.")
-
-    upstream = _git_text(
-        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
-    )
-    if upstream:
-        ok, output = _run_git_step(root, ["push"], 120)
-    else:
-        remotes = status.get("remotes") or []
-        remote = "origin" if "origin" in remotes else remotes[0]
-        ok, output = _run_git_step(root, ["push", "-u", remote, branch], 120)
-
+    ok, output = _push_branch(root, status)
     if not ok:
         return _action_error("The push failed.", output)
     return _action_ok(output or "Pushed the commits.")
@@ -910,6 +996,7 @@ def git_create_remote(
     visibility: str,
     description: str = "",
     pages: bool = False,
+    readme: str = "",
 ) -> dict:
     status = read_git_status(target)
     if not status.get("repo"):
@@ -938,6 +1025,10 @@ def git_create_remote(
     if visibility not in ("private", "public"):
         return _action_error("Choose private or public visibility.")
 
+    prep = _add_readme(root, readme)
+    if not prep["ok"]:
+        return prep
+
     flag = "--private" if visibility == "private" else "--public"
     description = str(description or "").strip()[:350]
     cmd = [
@@ -959,6 +1050,8 @@ def git_create_remote(
         return _action_error("Creating the GitHub repo failed.", output)
 
     result = _action_ok(output or f"Created {name} and pushed the commits.")
+    if prep.get("readme_written"):
+        result["readme_written"] = True
     if not pages:
         return result
 
@@ -1002,7 +1095,7 @@ def git_create_remote(
     return result
 
 
-def git_enable_pages(target: Path) -> dict:
+def git_enable_pages(target: Path, readme: str = "") -> dict:
     status = read_git_status(target)
     if not status.get("repo"):
         return _action_error("This folder is not a Git repository.")
@@ -1034,12 +1127,24 @@ def git_enable_pages(target: Path) -> dict:
     if missing:
         return _action_error(missing)
 
+    prep = _add_readme(root, readme)
+    if not prep["ok"]:
+        return prep
+    if prep.get("readme_written"):
+        ok, push_output = _push_branch(root, status)
+        if not ok:
+            return _action_error(
+                "README.md was committed, but it could not be pushed.", push_output
+            )
+
     ok, output = _enable_github_pages(root, owner, repo, branch)
     if not ok:
         return _action_error("GitHub Pages could not be enabled.", output)
 
     pages_url = _github_pages_url(owner, repo)
     result = _action_ok(output or f"Enabled GitHub Pages at {pages_url}.")
+    if prep.get("readme_written"):
+        result["readme_written"] = True
     result["pages_url"] = pages_url
     ok, homepage_output = _set_repo_homepage(root, owner, repo, pages_url)
     if not ok:
@@ -1062,7 +1167,7 @@ def run_git_action(action: str, target: Path, body: dict) -> dict:
     if action == "push":
         return git_push(target)
     if action == "pages":
-        return git_enable_pages(target)
+        return git_enable_pages(target, str(body.get("readme") or ""))
     if action == "pages-entry":
         return git_create_pages_entry(target)
     if action == "remote":
@@ -1072,6 +1177,7 @@ def run_git_action(action: str, target: Path, body: dict) -> dict:
             str(body.get("visibility") or "private").lower(),
             str(body.get("description") or "").strip(),
             bool(body.get("pages")),
+            str(body.get("readme") or ""),
         )
     return _action_error("Unknown Git action.")
 

@@ -21,6 +21,7 @@
   }
 
   const STORAGE_KEY = "ribbon:hidden"
+  const BAR_HEIGHT = 40
   const CSS = `
     :host { all: initial; }
     *, *::before, *::after { box-sizing: border-box; }
@@ -588,6 +589,22 @@
       border-color: #d0a64a;
       box-shadow: 0 0 0 2px rgba(208, 166, 74, .18);
     }
+    .git-textarea {
+      height: auto;
+      min-height: 96px;
+      padding: 8px 10px;
+      resize: vertical;
+      line-height: 1.5;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11.5px;
+    }
+    .git-hint {
+      display: block;
+      margin-top: 5px;
+      color: #8f8a7c;
+      font-size: 10.5px;
+      line-height: 1.4;
+    }
 
     .git-radios { display: flex; gap: 18px; padding: 3px 0 1px; }
     .git-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #cfc9b8; cursor: pointer; }
@@ -908,6 +925,11 @@
               '<span class="git-label">Description (optional)</span>' +
               '<input class="git-input git-description" type="text" maxlength="350" autocomplete="off" placeholder="What is this app?">' +
             "</label>" +
+            '<label class="git-field git-readme-field" hidden>' +
+              '<span class="git-label">README.md</span>' +
+              '<textarea class="git-input git-textarea git-readme" rows="6" maxlength="20000" spellcheck="false" placeholder="Write a short README…"></textarea>' +
+              '<span class="git-hint">No README yet. Ribbon will write this to README.md, commit it, and push it before publishing.</span>' +
+            "</label>" +
             '<label class="git-check git-pages-field" hidden>' +
               '<input type="checkbox" class="git-pages">' +
               "<span>Publish with GitHub Pages and set it as the repo homepage</span>" +
@@ -961,6 +983,8 @@
     const gitVisibilityInputs = shadow.querySelectorAll('input[name="git-visibility"]')
     const gitDescriptionField = shadow.querySelector(".git-description-field")
     const gitDescription = shadow.querySelector(".git-description")
+    const gitReadmeField = shadow.querySelector(".git-readme-field")
+    const gitReadme = shadow.querySelector(".git-readme")
     const gitPagesField = shadow.querySelector(".git-pages-field")
     const gitPages = shadow.querySelector(".git-pages")
     const gitIgnoreField = shadow.querySelector(".git-ignore-field")
@@ -1032,10 +1056,56 @@
 
     let manualHidden = readHidden()
     let autoHidden = false
+    let topOffset = false
+    let savedPaddingTop = null
     const lastTargets = new Map()
     let tipPinned = false
     let tipTimer = 0
     const hoverCapable = window.matchMedia("(hover: hover)").matches
+
+    // Reserve a strip at the top of the page for the bar, so the app's own
+    // header is not covered while you are at the very top. Scrolling down
+    // still turns the bar into an overlay that slides away.
+    function setTopOffset(on, compensate) {
+      const body = document.body
+      if (!body || topOffset === on) return
+      const before = compensate ? scrollY() : 0
+
+      if (on) {
+        if (!savedPaddingTop) {
+          savedPaddingTop = {
+            value: body.style.getPropertyValue("padding-top"),
+            priority: body.style.getPropertyPriority("padding-top")
+          }
+        }
+        const base = parseFloat(window.getComputedStyle(body).paddingTop) || 0
+        body.style.setProperty("padding-top", (base + BAR_HEIGHT) + "px", "important")
+      } else if (savedPaddingTop) {
+        if (savedPaddingTop.value) {
+          body.style.setProperty(
+            "padding-top",
+            savedPaddingTop.value,
+            savedPaddingTop.priority
+          )
+        } else {
+          body.style.removeProperty("padding-top")
+        }
+      }
+
+      topOffset = on
+      if (!compensate || before === 0) return
+
+      // Keep the page still when the strip is added or removed by hand.
+      const after = on ? before + BAR_HEIGHT : Math.max(0, before - BAR_HEIGHT)
+      if (after === before) return
+      const root = document.documentElement
+      const behavior = root.style.getPropertyValue("scroll-behavior")
+      const priority = root.style.getPropertyPriority("scroll-behavior")
+      root.style.setProperty("scroll-behavior", "auto", "important")
+      window.scrollTo(0, after)
+      if (behavior) root.style.setProperty("scroll-behavior", behavior, priority)
+      else root.style.removeProperty("scroll-behavior")
+    }
 
     function applyState() {
       const gone = manualHidden || autoHidden
@@ -1054,6 +1124,7 @@
       manualHidden = hidden
       if (hidden) autoHidden = false
       else lastTargets.clear()
+      setTopOffset(!hidden, true)
       try {
         sessionStorage.setItem(STORAGE_KEY, hidden ? "1" : "0")
       } catch (_) { /* storage may be unavailable */ }
@@ -1402,6 +1473,7 @@
       gitNameField.hidden = true
       gitVisibilityField.hidden = true
       gitDescriptionField.hidden = true
+      gitReadmeField.hidden = true
       gitPagesField.hidden = true
       gitIgnoreField.hidden = true
       gitNote.hidden = true
@@ -1525,6 +1597,13 @@
       }
       gitDescriptionField.hidden = gitAction !== "remote"
       if (!gitDescriptionField.hidden) gitDescription.value = ""
+      const readmeMissing = !(detail.readme && detail.readme.exists)
+      gitReadmeField.hidden = !(
+        (gitAction === "remote" || gitAction === "pages") && readmeMissing
+      )
+      if (!gitReadmeField.hidden) {
+        gitReadme.value = "# " + ((app && app.title) || "App") + "\n\n"
+      }
       gitPagesField.hidden = gitAction !== "remote"
       if (!gitPagesField.hidden) gitPages.checked = false
       gitIgnoreField.hidden = gitAction !== "init" || !!detail.has_gitignore
@@ -1582,7 +1661,8 @@
       gitCancel.disabled = false
       gitClose.disabled = false
 
-      if (gitAction === "commit" || gitAction === "init") gitMessage.focus()
+      if (!gitReadmeField.hidden) gitReadme.focus()
+      else if (gitAction === "commit" || gitAction === "init") gitMessage.focus()
       else if (gitAction === "remote") gitName.focus()
       else if (gitAction === "push" || gitAction === "pages" || gitAction === "pages-entry") gitPrimary.focus()
       else gitCancel.focus()
@@ -1609,6 +1689,7 @@
       gitNameField.hidden = true
       gitVisibilityField.hidden = true
       gitDescriptionField.hidden = true
+      gitReadmeField.hidden = true
       gitPagesField.hidden = true
       gitIgnoreField.hidden = true
       gitPrimary.hidden = true
@@ -1701,6 +1782,7 @@
         payload.description = gitDescription.value.trim()
         payload.pages = gitPages.checked
       }
+      if (!gitReadmeField.hidden) payload.readme = gitReadme.value
 
       setGitBusy(true)
       gitStatus.className = "git-status"
@@ -1753,6 +1835,9 @@
               message = "GitHub repo created, but Pages setup failed."
               extra = data.pages_error
             }
+          }
+          if (data.readme_written) {
+            extra = [ "README.md was committed and pushed.", extra ].filter(Boolean).join("\n")
           }
           setGitBusy(false)
           renderGitPanel(data.status || gitDetail, null, message, extra)
@@ -2094,6 +2179,7 @@
       apps: apps
     }
 
+    setTopOffset(!manualHidden, false)
     applyState()
     document.documentElement.appendChild(host)
   }

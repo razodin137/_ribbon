@@ -677,6 +677,24 @@
     box-shadow: 0 0 0 2px rgba(208, 166, 74, .18);
   }
 
+  .git-textarea {
+    height: auto;
+    min-height: 96px;
+    padding: 8px 10px;
+    resize: vertical;
+    line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 11.5px;
+  }
+
+  .git-hint {
+    display: block;
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 10.5px;
+    line-height: 1.4;
+  }
+
   .git-radios { display: flex; gap: 18px; padding: 3px 0 1px; }
 
   .git-radio {
@@ -1042,6 +1060,11 @@
         <label class="git-field" id="git-description-field" hidden>
           <span class="git-label">Description (optional)</span>
           <input class="git-input" id="git-description" type="text" maxlength="350" autocomplete="off" placeholder="What is this app?">
+        </label>
+        <label class="git-field" id="git-readme-field" hidden>
+          <span class="git-label">README.md</span>
+          <textarea class="git-input git-textarea" id="git-readme" rows="6" maxlength="20000" spellcheck="false" placeholder="Write a short README…"></textarea>
+          <span class="git-hint">No README yet. Ribbon will write this to README.md, commit it, and push it before publishing.</span>
         </label>
         <label class="git-check" id="git-pages-field" hidden>
           <input type="checkbox" id="git-pages">

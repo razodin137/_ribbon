@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en" data-ribbon-shell>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ribbon-shell" content="1">
+<title>Apps</title>
+<script>
+  try {
+    if (sessionStorage.getItem("ribbon:shell-hidden") === "1") {
+      document.documentElement.classList.add("is-hidden");
+    }
+  } catch (error) {}
+</script>
+<style>
+  :root {
+    --bar-h: 40px;
+    --ink: #eee9dc;
+    --muted: #979284;
+    --line: rgba(255, 255, 255, .13);
+    --accent: #d0a64a;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    overflow: hidden;
+    background: #101210;
+    color: var(--ink);
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: var(--bar-h);
+    margin: 0;
+    padding: 0 7px 0 13px;
+    background: rgba(17, 18, 15, .97);
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+    user-select: none;
+    -webkit-user-select: none;
+    transform: translateY(0);
+    transition: transform 260ms cubic-bezier(.2, .7, .2, 1), opacity 180ms ease;
+    will-change: transform;
+  }
+
+  html.is-hidden .bar {
+    transform: translateY(calc(-100% - 1px));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 0 0 auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .12em;
+    color: var(--muted);
+  }
+
+  .leds {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+  }
+
+  .led {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #454741;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+    transition: background .2s ease, box-shadow .2s ease;
+  }
+
+  .led.ok {
+    background: #65d18a;
+    box-shadow: 0 0 0 3px rgba(101, 209, 138, .1), 0 0 8px rgba(101, 209, 138, .45);
+  }
+
+  .led.warn {
+    background: #e0b35a;
+    box-shadow: 0 0 0 3px rgba(224, 179, 90, .1), 0 0 8px rgba(224, 179, 90, .4);
+  }
+
+  .led.bad {
+    background: #e0675a;
+    box-shadow: 0 0 0 3px rgba(224, 103, 90, .1), 0 0 8px rgba(224, 103, 90, .45);
+  }
+
+  .led.off { background: #454741; box-shadow: none; }
+
+  .count {
+    color: #cfc9b9;
+    min-width: 52px;
+  }
+
+  .title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-right: 4px;
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: .005em;
+    color: #f4f0e6;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+  }
+
+  .btn {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    margin: 0;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #cfc9b8;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn:hover { background: rgba(255, 255, 255, .075); color: #fff; }
+  .btn:active { background: rgba(255, 255, 255, .11); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+  .btn:disabled { opacity: .28; cursor: default; pointer-events: none; }
+  .btn svg { width: 15px; height: 15px; flex: none; }
+
+  .sep {
+    width: 1px;
+    height: 17px;
+    margin: 0 4px;
+    background: rgba(255, 255, 255, .13);
+  }
+
+  #app {
+    position: fixed;
+    top: var(--bar-h);
+    left: 0;
+    display: block;
+    width: 100%;
+    height: calc(100vh - var(--bar-h));
+    height: calc(100dvh - var(--bar-h));
+    border: 0;
+    background: #f7f3ea;
+  }
+
+  #app[hidden] { display: none; }
+
+  html.is-hidden #app {
+    top: 0;
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  html.is-hidden .empty {
+    inset: 0 0 0 0;
+  }
+
+  .peek {
+    position: fixed;
+    top: 0;
+    right: 14px;
+    z-index: 11;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 19px;
+    margin: 0;
+    padding: 0 8px;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: rgba(17, 18, 15, .85);
+    color: #b9b3a4;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 9px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  .peek.is-shown {
+    opacity: .42;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .peek.is-shown:hover,
+  .peek.is-shown:focus-visible { opacity: 1; }
+  .peek:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .empty {
+    position: fixed;
+    inset: var(--bar-h) 0 0 0;
+    display: grid;
+    place-items: center;
+    padding: 32px;
+    background: #f7f3ea;
+    color: #23251f;
+  }
+
+  .empty[hidden] { display: none; }
+
+  .empty-inner {
+    width: min(100%, 520px);
+  }
+
+  .empty h1 {
+    margin: 0 0 14px;
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+  }
+
+  .empty p {
+    margin: 0 0 12px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #5f6157;
+  }
+
+  .empty code {
+    display: block;
+    padding: 12px 14px;
+    border: 1px solid #ded6c6;
+    border-radius: 8px;
+    background: #fffdf8;
+    color: #23251f;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+    overflow-x: auto;
+  }
+
+  @media (max-width: 720px) {
+    .bar { gap: 8px; padding: 0 4px 0 10px; }
+    .label { display: none; }
+    .btn { padding: 0 8px; }
+    .count { min-width: 0; }
+    .title { font-size: 12.5px; }
+  }
+
+  @media (max-width: 420px) {
+    .leds { gap: 3px; }
+    .count { font-size: 9px; }
+    .peek-label { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bar, .peek { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="bar" id="bar" role="navigation" aria-label="App ribbon">
+    <div class="meta">
+      <span class="leds" aria-label="Repository and push status">
+        <span class="led off" id="led-repo" role="img" aria-label="Repository status"></span>
+        <span class="led off" id="led-sync" role="img" aria-label="Push status"></span>
+      </span>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="title" id="title"></div>
+    <div class="actions">
+      <button class="btn" type="button" data-act="prev" aria-label="Previous app" title="Previous app — [">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        <span class="label">Back</span>
+      </button>
+      <button class="btn" type="button" data-act="next" aria-label="Next app" title="Next app — ]">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+        <span class="label">Next</span>
+      </button>
+      <button class="btn" type="button" data-act="random" aria-label="Random app" title="Random app — R">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 4l3 3-3 3"/><path d="M18 20l3-3-3-3"/><path d="M3 7h3c2 0 3.5 1 4.5 2.5l3 5C14.5 16 16 17 18 17h3"/><path d="M3 17h3c2 0 3.5-1 4.5-2.5l3-5C14.5 8 16 7 18 7h3"/></svg>
+        <span class="label">Random</span>
+      </button>
+      <span class="sep" aria-hidden="true"></span>
+      <button class="btn" type="button" data-act="hide" aria-label="Hide ribbon" title="Hide ribbon — H">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <button class="peek" id="peek" type="button" aria-label="Show ribbon" title="Show ribbon — H">
+    <span aria-hidden="true">▤</span><span class="peek-label">ribbon</span>
+  </button>
+
+  <iframe id="app" title="App" loading="eager"></iframe>
+
+  <div class="empty" id="empty" hidden>
+    <div class="empty-inner">
+      <h1>No apps listed yet</h1>
+      <p>Add a folder containing an <code style="display:inline;padding:2px 5px">index.html</code>, then regenerate the list:</p>
+      <code>python3 _ribbon/ribbon.py --write-apps</code>
+      <p style="margin-top:14px">Or add an entry to <code style="display:inline;padding:2px 5px">apps.js</code> by hand.</p>
+    </div>
+  </div>
+
+  <script src="apps.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    var apps = (Array.isArray(window.__RIBBON_APPS__) ? window.__RIBBON_APPS__ : []).filter(function (app) {
+      return app && typeof app.url === "string" && app.url;
+    });
+
+    var bar = document.getElementById("bar");
+    var countEl = document.getElementById("count");
+    var titleEl = document.getElementById("title");
+    var frame = document.getElementById("app");
+    var empty = document.getElementById("empty");
+    var peek = document.getElementById("peek");
+    var ledRepo = document.getElementById("led-repo");
+    var ledSync = document.getElementById("led-sync");
+    var buttons = document.querySelectorAll("button[data-act]");
+
+    var STORAGE_KEY = "ribbon:shell-hidden";
+    var index = -1;
+    var manualHidden = readHidden();
+    var autoHidden = false;
+    var suppressScrollUntil = 0;
+    var lastTargets = new Map();
+    var wiredDocs = new WeakSet();
+
+    frame.addEventListener("load", wireFrame);
+
+    if (!apps.length) {
+      empty.hidden = false;
+      frame.hidden = true;
+      titleEl.textContent = "No apps listed";
+      countEl.textContent = "00 / 00";
+      disablePaging();
+      setGit(null);
+      applyHidden();
+    } else {
+      var start = 0;
+      var hash = readHash();
+      if (hash) {
+        for (var i = 0; i < apps.length; i += 1) {
+          if (apps[i].url === hash) {
+            start = i;
+            break;
+          }
+        }
+      }
+      setApp(start);
+    }
+
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("hashchange", function () {
+      var wanted = readHash();
+      if (!wanted) return;
+      for (var i = 0; i < apps.length; i += 1) {
+        if (apps[i].url === wanted && i !== index) {
+          setApp(i, false);
+          break;
+        }
+      }
+    });
+
+    bar.addEventListener("click", function (event) {
+      var button = event.target && event.target.closest
+        ? event.target.closest("button[data-act]")
+        : null;
+      if (!button) return;
+      var action = button.getAttribute("data-act");
+      if (action === "prev") step(-1);
+      else if (action === "next") step(1);
+      else if (action === "random") random();
+      else if (action === "hide") setManual(true);
+    });
+
+    peek.addEventListener("click", function () {
+      setManual(false);
+    });
+
+    function setApp(next, updateHash) {
+      if (!apps.length) return;
+      index = (next + apps.length) % apps.length;
+      var app = apps[index];
+
+      titleEl.textContent = app.title || "Untitled";
+      titleEl.title = app.title || "Untitled";
+      countEl.textContent = pad(index + 1) + " / " + pad(apps.length);
+      document.title = (app.title ? app.title + " — " : "") + "Apps";
+      frame.title = app.title || "App";
+      frame.src = app.url;
+      setGit(app.git);
+      refreshGit(app);
+
+      if (apps.length < 2) disablePaging();
+
+      if (updateHash !== false) {
+        var nextHash = "#" + encodeURIComponent(app.url);
+        try {
+          history.replaceState(null, "", nextHash);
+        } catch (error) {
+          location.hash = encodeURIComponent(app.url);
+        }
+      }
+
+      lastTargets.clear();
+      suppressScrollUntil = Date.now() + 300;
+    }
+
+    function setGit(git) {
+      var repo = !!(git && git.repo);
+      ledRepo.className = "led " + (repo ? "ok" : "off");
+      ledRepo.title = repo
+        ? "Git repository" + (git.branch ? " — " + git.branch : "")
+        : "Not a Git repository";
+      ledRepo.setAttribute("aria-label", ledRepo.title);
+
+      var state = (git && git.state) || "";
+      var cls = "off";
+      if (repo) {
+        if (state === "ahead") cls = "bad";
+        else if (state === "dirty" || state === "no-upstream" || state === "detached" || state === "no-commits") cls = "warn";
+        else if (state === "error") cls = "off";
+        else cls = "ok";
+      }
+      ledSync.className = "led " + cls;
+      ledSync.title = gitTip(git);
+      ledSync.setAttribute("aria-label", ledSync.title);
+    }
+
+    function gitTip(git) {
+      if (!git || !git.repo) {
+        return git && git.state === "error"
+          ? "Git status unavailable"
+          : "Not a Git repository";
+      }
+      var bits = [];
+      if (git.state === "ahead") {
+        var count = git.ahead || 1;
+        bits.push(count + " commit" + (count === 1 ? "" : "s") + " not pushed");
+      } else if (git.state === "no-upstream") {
+        bits.push("No upstream branch");
+      } else if (git.state === "detached") {
+        bits.push("Detached HEAD");
+      } else if (git.state === "no-commits") {
+        bits.push("No commits yet");
+      } else if (git.state === "dirty") {
+        bits.push("Uncommitted changes");
+      } else if (git.state === "error") {
+        bits.push("Git status unavailable");
+      } else {
+        bits.push("All changes pushed");
+      }
+      if (git.dirty && git.state !== "dirty") bits.push("uncommitted changes");
+      if (git.behind) bits.push(git.behind + " behind");
+      return bits.join(" · ");
+    }
+
+    function refreshGit(app) {
+      if (!app || !app.dir) return;
+      if (location.protocol !== "http:" && location.protocol !== "https:") return;
+      fetch("/__ribbon/git.json?dir=" + encodeURIComponent(app.dir), {
+        cache: "no-store"
+      })
+        .then(function (response) {
+          return response.ok ? response.json() : null;
+        })
+        .then(function (data) {
+          if (!data || app !== apps[index]) return;
+          app.git = data;
+          setGit(data);
+        })
+        .catch(function () {});
+    }
+
+    function step(direction) {
+      if (apps.length < 2) return;
+      setApp(index + direction);
+    }
+
+    function random() {
+      if (apps.length < 2) return;
+      var pick = Math.floor(Math.random() * (apps.length - 1));
+      if (pick >= index) pick += 1;
+      setApp(pick);
+    }
+
+    function disablePaging() {
+      for (var i = 0; i < buttons.length; i += 1) {
+        var action = buttons[i].getAttribute("data-act");
+        if (action !== "hide") buttons[i].disabled = true;
+      }
+    }
+
+    function pad(number) {
+      var width = String(apps.length).length;
+      var value = String(number);
+      while (value.length < width) value = "0" + value;
+      return value;
+    }
+
+    function wireFrame() {
+      var win;
+      var doc;
+      try {
+        win = frame.contentWindow;
+        doc = frame.contentDocument;
+      } catch (error) {
+        return;
+      }
+      if (!win || !doc || wiredDocs.has(doc)) return;
+      wiredDocs.add(doc);
+
+      try {
+        win.addEventListener("scroll", onScroll, { passive: true });
+        doc.addEventListener("scroll", onScroll, { passive: true, capture: true });
+        win.addEventListener("keydown", onKey, true);
+      } catch (error) {
+        return;
+      }
+    }
+
+    var pendingScroll = null;
+
+    function onScroll(event) {
+      if (pendingScroll) return;
+      pendingScroll = event;
+      requestAnimationFrame(processScroll);
+    }
+
+    function processScroll() {
+      var event = pendingScroll;
+      pendingScroll = null;
+      if (manualHidden || Date.now() < suppressScrollUntil) return;
+
+      var win;
+      var doc;
+      try {
+        win = frame.contentWindow;
+        doc = frame.contentDocument;
+      } catch (error) {
+        return;
+      }
+      if (!win || !doc) return;
+
+      var target = event && event.target;
+      if (
+        target === win ||
+        target === doc ||
+        target === doc.documentElement ||
+        target === doc.body
+      ) {
+        target = null;
+      }
+
+      var y = target
+        ? target.scrollTop
+        : (win.scrollY || win.pageYOffset || doc.documentElement.scrollTop || 0);
+      var hasPrevious = lastTargets.has(target);
+      var previous = hasPrevious ? lastTargets.get(target) : y;
+      var delta = y - previous;
+
+      if (Math.abs(delta) < 10) {
+        if (!hasPrevious) lastTargets.set(target, y);
+        return;
+      }
+
+      var nextHidden;
+      if (y <= 8) nextHidden = false;
+      else if (delta > 0 && y > 48) nextHidden = true;
+      else if (delta < 0) nextHidden = false;
+      else return;
+
+      lastTargets.set(target, y);
+      if (nextHidden !== autoHidden) {
+        autoHidden = nextHidden;
+        applyHidden();
+      }
+    }
+
+    function onKey(event) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      var target = event.target;
+      if (
+        target &&
+        (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+      ) {
+        return;
+      }
+
+      var key = event.key;
+      var handled = true;
+      if (key === "[") step(-1);
+      else if (key === "]") step(1);
+      else if (key === "r" || key === "R") random();
+      else if (key === "h" || key === "H") toggleHidden();
+      else handled = false;
+
+      if (handled) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+
+    function toggleHidden() {
+      if (!manualHidden && autoHidden) {
+        autoHidden = false;
+        applyHidden();
+        return;
+      }
+      setManual(!manualHidden);
+    }
+
+    function setManual(hidden) {
+      manualHidden = hidden;
+      if (hidden) autoHidden = false;
+      else lastTargets.clear();
+      try {
+        sessionStorage.setItem(STORAGE_KEY, hidden ? "1" : "0");
+      } catch (error) {}
+      applyHidden();
+    }
+
+    function applyHidden() {
+      var gone = manualHidden || autoHidden;
+      document.documentElement.classList.toggle("is-hidden", gone);
+      if (gone) bar.setAttribute("inert", "");
+      else bar.removeAttribute("inert");
+      peek.classList.toggle("is-shown", manualHidden);
+      peek.tabIndex = manualHidden ? 0 : -1;
+    }
+
+    function readHidden() {
+      try {
+        return sessionStorage.getItem(STORAGE_KEY) === "1";
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function readHash() {
+      var hash = location.hash.replace(/^#/, "");
+      if (!hash) return "";
+      try {
+        return decodeURIComponent(hash);
+      } catch (error) {
+        return hash;
+      }
+    }
+
+    applyHidden();
+  })();
+  </script>
+</body>
+</html>

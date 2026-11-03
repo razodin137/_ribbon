@@ -1,169 +1,179 @@
 # Ribbon
 
-A small app switcher for the standalone HTML sites under
-`/home/mrjohn/Work/tries`. There are two ways to run it:
-
-1. **Static shell** — open `_ribbon/index.html`. No server, no page edits.
-2. **Tiny server** — `_ribbon/ribbon.py` discovers apps automatically and
-   injects the ribbon into every page.
-
-Both show the same bar:
+Ribbon is a little bar at the top of your screen. It lets you jump between
+all the websites you made, without typing long addresses.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ ● 04 / 11  Beam Library          ‹ Back   › Next   ⤨ Random   ✕      │
+│ ● 04 / 11  Beam Library ▾      ‹ Back  › Next  ⤨ Random  ↻    ✕     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Next/back/random move between apps, the bar hides on scroll, and `H` or the
-`✕` button tucks it away.
+## Start it
 
-## Static shell
-
-Open:
+Open a terminal in the folder that holds `_ribbon` and type this:
 
 ```bash
-xdg-open /home/mrjohn/Work/tries/2026-11-03-teaching/_ribbon/index.html
+python3 _ribbon/ribbon.py
 ```
 
-or serve it with anything static:
+(If `_ribbon` lives somewhere else, use its full path instead.)
+
+A browser window opens with your first app. That's it!
+
+Keep the terminal window open while you use Ribbon. When you are done,
+click the terminal and press **Ctrl+C** to stop it.
+
+Ribbon is good at finding your apps. It looks in the folder that contains
+`_ribbon`. If there are no apps there, it looks one folder up.
+If it guesses wrong, you can tell it where to look:
 
 ```bash
-cd /home/mrjohn/Work/tries
-python3 -m http.server 8000
-# then open:
-# http://localhost:8000/2026-11-03-teaching/_ribbon/
+python3 _ribbon/ribbon.py --root ~/my-websites
 ```
 
-The shell puts the banner above an iframe. Apps keep their own assets, fonts,
-CSS, and JS; the iframe loads each app's `index.html` directly.
+## What the buttons do
 
-### Add a folder
+| Button | What it does | Keyboard |
+| --- | --- | --- |
+| `Beam Library ▾` | Open the app menu: search and jump to any app | `/` |
+| `‹ Back` | Go to the app before this one | `[` |
+| `› Next` | Go to the app after this one | `]` |
+| `⤨ Random` | Surprise me — jump to any app | `R` |
+| `↻` | Reload the app you are looking at | `Shift+R` |
+| `✕` | Hide the bar | `H` |
 
-Drop it under `/home/mrjohn/Work/tries` with an `index.html` and a title:
+Back and Next wrap around. When you hide the bar, a tiny **RIBBON** tab
+appears in the top right corner. Click it — or press **H** — to bring the
+bar back.
+
+The bar also hides itself when you scroll down, and comes back when you
+scroll up.
+
+## Find any app fast
+
+Click the app's name in the bar, or press **`/`**, to open the app menu.
+
+- **Search** — start typing to filter the list.
+- **Enter** — open the first match.
+- **Escape** — close the menu.
+
+## Favorites
+
+The star at the top of the app menu saves the app you are looking at.
+Stars next to every row do the same thing. Favorites get their own
+section at the top of the menu, so your everyday apps are always one
+click away. Click a filled star again to remove it.
+
+The browser remembers your favorites. They work in both the server
+version and the no-server version.
+
+## Add a new app
+
+1. Make a folder inside your apps folder.
+2. Put a file called `index.html` inside it.
+3. Give the page a name, like this:
 
 ```html
-<title>My Thing</title>
+<title>My Cool App</title>
 ```
 
-Then refresh the list:
+If Ribbon is already running, just refresh. It finds new folders by itself.
+
+Pages without a `<title>` are skipped on purpose. That keeps login pages
+and other private things out of the list. If you really want them:
 
 ```bash
-cd /home/mrjohn/Work/tries/2026-11-03-teaching
+python3 _ribbon/ribbon.py --include-untitled
+```
+
+## Check what it found
+
+Want to see the list without opening a browser? Run:
+
+```bash
+python3 _ribbon/ribbon.py --list
+```
+
+It prints every app it can see, with its folder and whether it is backed
+up. To start on a certain app, add its number:
+
+```bash
+python3 _ribbon/ribbon.py --app 3
+```
+
+## The no-server version
+
+Opening `_ribbon/index.html` directly also works. It shows the same bar
+above a big window with the app inside.
+
+But the list it uses is a snapshot. After you add a new app, refresh the
+snapshot first:
+
+```bash
+cd /path/to/your-apps
 python3 _ribbon/ribbon.py --write-apps
 ```
 
-That rewrites `_ribbon/apps.js`. You can also edit `apps.js` by hand; it is
-just:
+Then open `_ribbon/index.html`.
 
-```js
-window.__RIBBON_APPS__ = [
-  { url: "../../my-thing/index.html", title: "My Thing" },
-  { url: "../index.html", title: "The School with a Voice" }
-];
-```
+One catch: when you open the file directly, some things are turned off by
+the browser — the keyboard shortcuts and the scroll-to-hide. Some browsers
+also keep favorites in a separate place, or forget them altogether. If you
+want everything to work the same way every time, use the server version at
+the top of this page.
 
-URLs are relative to `_ribbon/`, which is why the teaching app uses
-`../index.html` and the others use `../../`.
+## What are the two little lights?
 
-### `file://` caveat
+They are about **Git**. Git is a tool grown-ups use to save and back up
+versions of their work.
 
-Navigation, assets, and the hide button work when you open the shell directly.
-Scroll-to-hide and the keyboard shortcuts inside the app need the shell served
-over HTTP, because browsers make `file://` iframes cross-origin. Any static
-server works; so does the ribbon server below.
+- **Left light** — green means this app is saved in Git. Dark means it is
+  not.
+- **Right light** — green means everything is backed up. Yellow means
+  there are changes that are not saved yet. Red means there are saved
+  changes that have not been sent to the internet. Dark means there is no
+  Git here.
 
-## Tiny server
+Hover over the lights to read exactly what is going on.
 
-```bash
-python3 /home/mrjohn/Work/tries/2026-11-03-teaching/_ribbon/ribbon.py
-```
+## If something goes wrong
 
-It scans the folder two levels above the script (`/home/mrjohn/Work/tries`),
-serves it on `http://127.0.0.1:8765`, and prints both the first app and the
-static shell URL. When it serves HTML, it adds one line before `</body>`:
-
-```html
-<script src="/__ribbon/ribbon.js" data-ribbon="1" defer></script>
-```
-
-Nothing on disk is changed. The injected ribbon lives inside the page, so it
-works on any app page without an iframe.
-
-Useful flags:
-
-```bash
-./ribbon.py --list                 # show what it found and exit
-./ribbon.py --write-apps           # regenerate apps.js (including git status)
-./ribbon.py --root ~/some/folder   # index a different folder
-./ribbon.py --port 9000            # pick a port
-./ribbon.py --no-open              # don't launch a browser
-./ribbon.py --include-untitled     # also list pages without a <title>
-```
-
-## Controls
-
-| Action | Button | Key |
-| --- | --- | --- |
-| Previous app | `‹ Back` | `[` |
-| Next app | `› Next` | `]` |
-| Random app | `⤨ Random` | `R` |
-| Hide / show ribbon | `✕` | `H` |
-
-Prev/next wrap around. Hidden state is remembered for the browser tab. When
-hidden, a tiny `RIBBON` tab sits at the top right; click it or press `H` to
-bring the bar back.
-
-## Status LEDs
-
-Two small LEDs sit beside the count:
-
-| LED | Meaning |
+| Problem | Try this |
 | --- | --- |
-| Left | Green: the app's folder is inside a Git repository. Dark: no repository. |
-| Right | Green: clean and level with upstream. Amber: uncommitted changes, no upstream, no commits, or detached HEAD. Red: local commits not pushed. Dark: no repository. |
+| It says **No apps found** | Your pages may have no `<title>`. Try `--include-untitled`, or point it at the right folder with `--root`. |
+| The bar disappeared | Press **H**, or click the little **RIBBON** tab in the top right. |
+| The keyboard shortcuts do nothing | Use the server version. Browsers turn them off when you open the file directly. |
+| It shows the wrong folder | Add `--root ~/the/folder/you/want`. |
+| The address is already in use | Ribbon tries the next port by itself. It tells you which one it picked. |
+| You forgot the commands | Run `python3 _ribbon/ribbon.py --help`. |
 
-Hover either LED for the branch, upstream, ahead/behind counts, and the exact
-reason for the color.
+## All the commands
 
-The static shell stores a snapshot in `apps.js` when you run `--write-apps`.
-When the shell is served by `ribbon.py`, it refreshes the LEDs live from
-`/__ribbon/git.json`. The injected ribbon also gets live status from the
-manifest. Nothing is checked from `file://` beyond the snapshot, because the
-browser cannot run Git.
+```bash
+python3 _ribbon/ribbon.py                  # start and open the first app
+python3 _ribbon/ribbon.py --list           # show the apps and quit
+python3 _ribbon/ribbon.py --app 3          # start on app number 3
+python3 _ribbon/ribbon.py --root ~/sites   # use a different folder
+python3 _ribbon/ribbon.py --port 9000      # use a different port
+python3 _ribbon/ribbon.py --no-open        # don't open a browser
+python3 _ribbon/ribbon.py --include-untitled
+python3 _ribbon/ribbon.py --write-apps     # refresh the no-server list
+python3 _ribbon/ribbon.py --verbose        # show every request
+python3 _ribbon/ribbon.py --help           # all options, with examples
+```
 
-## What gets listed
+## For the very curious
 
-- Every `index.html` under the root, ordered by path (date-prefixed folders
-  stay chronological).
-- Only pages with a non-empty `<title>` by default. That keeps logins, admin
-  screens, and other internals out without a config file. Use
-  `--include-untitled` to include them.
-- Hidden folders and the usual dependency/build directories are skipped
-  (`node_modules`, `.venv`, `dist`, `build`, `out`, `target`, …).
-- The shell itself is skipped via its `data-ribbon-shell` marker.
-- Nested apps work: `beam/web/index.html` is its own entry.
-
-When the server is running, new folders show up on reload with no rebuild.
-For the static shell, run `--write-apps` after adding a folder.
-
-## How the two modes coexist
-
-- The shell page has `<html data-ribbon-shell>`. The server skips injecting
-  into it, and the scanner skips listing it.
-- `ribbon.js` returns early when `window.self !== window.top`, so an app loaded
-  in the shell's iframe never grows a second ribbon when the server is also
-  running.
-- The server's bar overlays the top 40 px of the page. The shell reserves the
-  40 px above the iframe instead, so app headers are never covered.
-
-## Files
+The folder has four small pieces:
 
 ```
 _ribbon/
-  index.html  static shell: banner + iframe
-  apps.js     generated list for the static shell
-  ribbon.py   discovery, static-list generator, and optional server
-  ribbon.js   injected ribbon UI (shadow DOM, self-contained)
-  README.md
+  index.html  the no-server page: bar + big window
+  apps.js     the list that page uses (made by --write-apps)
+  ribbon.py   finds the apps, serves them, and adds the bar
+  ribbon.js   the bar itself
 ```
+
+Nothing on your disk is changed when the server runs. The bar is added to
+pages only while they are being sent to your browser.

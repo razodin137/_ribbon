@@ -6,9 +6,15 @@ Run this from anywhere:
 
     python3 ribbon.py
 
-It serves the folder above this script (override with --root), auto-discovers
-every index.html underneath it, injects ribbon.js into served HTML, and opens
-the first app. Nothing on disk is modified.
+Ribbon finds the folder that holds your apps, serves it on a local address,
+adds the ribbon bar to every page, and opens the first app. Nothing on disk
+is changed.
+
+Handy first commands:
+
+    python3 ribbon.py --list          see what it found
+    python3 ribbon.py --write-apps    refresh the no-server version
+    python3 ribbon.py --help          every option, with examples
 """
 
 from __future__ import annotations
@@ -28,7 +34,18 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlsplit
 
 APP_DIR = Path(__file__).resolve().parent
-DEFAULT_ROOT = APP_DIR.parent.parent
+VERSION = "1.1.0"
+
+STATE_LABELS = {
+    "clean": "all pushed",
+    "dirty": "unsaved changes",
+    "ahead": "commits to push",
+    "no-upstream": "not linked to a remote",
+    "no-commits": "no commits yet",
+    "detached": "detached HEAD",
+    "no-repo": "no git",
+    "error": "git unavailable",
+}
 
 SKIP_DIRS = {
     "node_modules",
@@ -44,6 +61,42 @@ SKIP_DIRS = {
     "target",
     "coverage",
 }
+
+
+def app_child_count(path: Path) -> int:
+    """How many direct child folders have an index.html."""
+    try:
+        entries = list(path.iterdir())
+    except OSError:
+        return 0
+    count = 0
+    for entry in entries:
+        if entry.resolve() == APP_DIR:
+            continue
+        if (
+            entry.is_dir()
+            and not entry.name.startswith(".")
+            and entry.name not in SKIP_DIRS
+            and (entry / "index.html").is_file()
+        ):
+            count += 1
+    return count
+
+
+def default_root() -> Path:
+    """The folder that most likely holds the user's apps.
+
+    If _ribbon sits beside the apps, that folder wins. If it sits inside one
+    app (the original layout), the folder one level further up wins.
+    """
+    parent = APP_DIR.parent
+    if app_child_count(parent) > 0:
+        return parent
+    grandparent = parent.parent
+    if grandparent != parent and app_child_count(grandparent) > 0:
+        return grandparent
+    return parent
+
 
 TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 BODY_CLOSE_RE = re.compile(rb"</body\s*>", re.IGNORECASE)
@@ -275,7 +328,7 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
 
 
 class RibbonHandler(SimpleHTTPRequestHandler):
-    root: Path = DEFAULT_ROOT
+    root: Path = APP_DIR.parent
     include_untitled: bool = False
 
     def log_message(self, fmt: str, *args) -> None:
@@ -388,55 +441,151 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             self.wfile.write(payload)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Serve a folder of HTML apps with a floating ribbon switcher."
+        prog="ribbon.py",
+        description="Browse a folder of HTML apps with a floating switcher bar.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  python3 ribbon.py                 start the server and open the first app\n"
+            "  python3 ribbon.py --list          show every app it can find, then quit\n"
+            "  python3 ribbon.py --write-apps    refresh apps.js for the static shell\n"
+            "  python3 ribbon.py --app 3         start on app number 3\n"
+            "  python3 ribbon.py --root ~/sites --port 9000\n"
+            "\n"
+            "Ribbon looks for the folder that holds your apps: beside this script\n"
+            "first, then one level further up. Use --root to point it anywhere.\n"
+            "It lists folders that contain an index.html with a <title>."
+        ),
     )
-    parser.add_argument(
-        "--root",
-        default=str(DEFAULT_ROOT),
-        help="folder to scan and serve (default: the folder above this script)",
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
+
+    commands = parser.add_argument_group("commands")
+    commands.add_argument(
+        "--list", action="store_true", help="list the apps it found and quit"
     )
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--no-open", action="store_true", help="don't open a browser")
-    parser.add_argument(
-        "--include-untitled",
-        action="store_true",
-        help="also list index.html pages that have no <title>",
-    )
-    parser.add_argument("--list", action="store_true", help="list discovered apps and exit")
-    parser.add_argument(
+    commands.add_argument(
         "--write-apps",
         action="store_true",
-        help="write apps.js for the static shell and exit",
+        help="rewrite apps.js for the static shell and quit",
     )
-    parser.add_argument("--verbose", action="store_true", help="log every request")
+
+    server = parser.add_argument_group("server")
+    server.add_argument(
+        "--root",
+        metavar="FOLDER",
+        help="folder to scan and serve (default: auto-detect)",
+    )
+    server.add_argument(
+        "--port", type=int, default=8765, help="first port to try (default: 8765)"
+    )
+    server.add_argument(
+        "--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)"
+    )
+    server.add_argument(
+        "--app",
+        type=int,
+        metavar="N",
+        help="open app number N instead of the first",
+    )
+    server.add_argument("--no-open", action="store_true", help="don't launch a browser")
+    server.add_argument("--verbose", action="store_true", help="log every request")
+
+    finding = parser.add_argument_group("finding apps")
+    finding.add_argument(
+        "--include-untitled",
+        action="store_true",
+        help="also list pages that have no <title>",
+    )
+    return parser
+
+
+def state_label(app: dict) -> str:
+    state = (app.get("git") or {}).get("state", "")
+    return STATE_LABELS.get(state, state)
+
+
+def print_apps(root: Path, apps: list[dict]) -> None:
+    noun = "app" if len(apps) == 1 else "apps"
+    print(f"\n  Ribbon found {len(apps)} {noun} in {root}\n")
+    width = len(str(len(apps)))
+    for index, app in enumerate(apps, 1):
+        print(f"  {index:>{width}}  {app['title']}")
+        line = f"      {app['url']}"
+        label = state_label(app)
+        if label:
+            line += f"  ·  {label}"
+        print(line)
+    print()
+
+
+def print_no_apps(root: Path, include_untitled: bool) -> None:
+    print(f"\n  No apps found in {root}\n")
+    print("  Ribbon lists folders that have an index.html with a <title>.")
+    if not include_untitled:
+        print("  Pages without a title are skipped by default:\n")
+        print("    python3 ribbon.py --list --include-untitled\n")
+    print("  Try pointing it somewhere else:\n")
+    print(f"    python3 ribbon.py --root {root.parent}")
+    print("    python3 ribbon.py --help\n")
+
+
+def static_shell_url(base: str, root: Path) -> str | None:
+    shell = APP_DIR / "index.html"
+    if not shell.is_file():
+        return None
+    try:
+        rel = shell.parent.relative_to(root).as_posix()
+    except ValueError:
+        return None
+    if rel == ".":
+        return base
+    return f"{base}{quote(rel, safe='/')}/"
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
 
-    root = Path(args.root).expanduser().resolve()
+    if args.list and args.write_apps:
+        parser.error("choose one: --list or --write-apps")
+    if args.app is not None and (args.list or args.write_apps):
+        parser.error("--app only makes sense when starting the server")
+
+    root = Path(args.root).expanduser().resolve() if args.root else default_root()
     if not root.is_dir():
-        parser.error(f"not a folder: {root}")
+        parser.error(f"that folder does not exist: {root}")
 
     if args.write_apps:
         target, count = write_apps_file(root, args.include_untitled)
-        print(f"wrote {target} ({count} apps)")
+        if not count:
+            print_no_apps(root, args.include_untitled)
+            print(f"  (wrote an empty list to {target})\n")
+            raise SystemExit(1)
+        print(f"\n  Wrote {count} apps to {target}\n")
         return
 
+    apps = discover(
+        root,
+        include_untitled=args.include_untitled,
+        with_git=args.list,
+        max_age=0,
+    )
+
     if args.list:
-        apps = discover(
-            root,
-            include_untitled=args.include_untitled,
-            with_git=True,
-            max_age=0,
-        )
-        for index, app in enumerate(apps, 1):
-            state = (app.get("git") or {}).get("state", "")
-            suffix = f"  [{state}]" if state else ""
-            print(f"{index:2d}  {app['title']}{suffix}\n    {app['url']}")
         if not apps:
-            print("No index.html files found.")
+            print_no_apps(root, args.include_untitled)
+            raise SystemExit(1)
+        print_apps(root, apps)
         return
+
+    if not apps:
+        print_no_apps(root, args.include_untitled)
+        raise SystemExit(1)
+
+    if args.app is not None and not 1 <= args.app <= len(apps):
+        parser.error(f"--app must be between 1 and {len(apps)}")
 
     handler = partial(RibbonHandler, directory=str(root))
     RibbonHandler.root = root
@@ -453,32 +602,29 @@ def main() -> None:
         parser.error(f"no free port in {args.port}-{args.port + 19}")
 
     httpd.verbose = args.verbose  # type: ignore[attr-defined]
+    chosen_port = httpd.server_address[1]
     host_for_url = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
-    url = f"http://{host_for_url}:{httpd.server_address[1]}/"
-    apps = discover(
-        root,
-        include_untitled=args.include_untitled,
-        with_git=False,
-        max_age=0,
-    )
+    base = f"http://{host_for_url}:{chosen_port}/"
+    if args.app is not None:
+        launch = base + apps[args.app - 1]["url"].lstrip("/")
+    else:
+        launch = base
 
-    print(f"\n  Ribbon → {url}")
-    print(f"  root   → {root}")
-    print(f"  apps   → {len(apps)}")
-    shell = APP_DIR / "index.html"
-    if shell.is_file():
-        try:
-            shell_rel = shell.parent.relative_to(root).as_posix()
-        except ValueError:
-            shell_rel = ""
-        if shell_rel and shell_rel != ".":
-            print(f"  shell  → {url}{quote(shell_rel, safe='/')}/")
-        elif shell_rel == ".":
-            print(f"  shell  → {url}")
-    print("  keys   → [ ] prev/next · r random · h hide\n")
+    print()
+    print(f"  Ribbon {VERSION} is running")
+    print(f"  folder  {root}")
+    print(f"  apps    {len(apps)}")
+    print(f"  open    {launch}")
+    if args.port != 0 and chosen_port != args.port:
+        print(f"  note    port {args.port} was busy, using {chosen_port}")
+    shell = static_shell_url(base, root)
+    if shell:
+        print(f"  shell   {shell}")
+    print("  keys    [ ] prev/next · r random · h hide · Ctrl+C stop")
+    print()
 
     if not args.no_open:
-        timer = threading.Timer(0.4, lambda: webbrowser.open(url))
+        timer = threading.Timer(0.4, lambda: webbrowser.open(launch))
         timer.daemon = True
         timer.start()
 
@@ -486,6 +632,8 @@ def main() -> None:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n  bye\n")
+    finally:
+        httpd.server_close()
 
 
 if __name__ == "__main__":

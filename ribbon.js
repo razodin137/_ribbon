@@ -153,18 +153,247 @@
     .led-tip-row span:last-child { display: block; }
     .count { color: #cfc9b9; min-width: 52px; }
 
-    .title {
+    .title-wrap {
+      display: flex;
+      align-items: center;
       flex: 1 1 auto;
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    }
+
+    .title {
+      appearance: none;
+      -webkit-appearance: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 28px;
+      margin: 0;
+      padding: 0 6px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #f4f0e6;
+      font: inherit;
       font-weight: 500;
       font-size: 13px;
       letter-spacing: .005em;
-      color: #f4f0e6;
-      padding-right: 4px;
+      text-align: left;
+      cursor: pointer;
     }
+    .title:hover { background: rgba(255, 255, 255, .075); }
+    .title:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
+    .title-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .title .chev {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      color: #979284;
+      transition: transform .15s ease;
+    }
+    .title[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+    .menu {
+      position: absolute;
+      top: calc(100% - 4px);
+      left: 8px;
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      width: min(430px, calc(100vw - 16px));
+      max-height: min(70vh, 560px);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 10px;
+      background: #1b1d18;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, .48);
+      color: #e9e4d6;
+      pointer-events: auto;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    .menu[hidden] { display: none; }
+
+    .menu-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px 8px;
+    }
+    .menu-current { flex: 1 1 auto; min-width: 0; }
+    .menu-current-label {
+      display: block;
+      margin-bottom: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #979284;
+    }
+    .menu-current-title {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+      color: #f4f0e6;
+    }
+
+    .star-btn {
+      appearance: none;
+      -webkit-appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      margin: 0;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 7px;
+      background: transparent;
+      color: #979284;
+      font: inherit;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      flex: none;
+    }
+    .star-btn:hover { background: rgba(255, 255, 255, .07); color: #f1d18a; }
+    .star-btn[aria-pressed="true"] {
+      border-color: rgba(241, 209, 138, .4);
+      background: rgba(241, 209, 138, .08);
+      color: #f1d18a;
+    }
+    .star-btn:focus-visible { outline: 2px solid #d0a64a; outline-offset: 1px; }
+    .star-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+
+    .menu-search { padding: 0 12px 9px; }
+    .menu-input {
+      width: 100%;
+      height: 30px;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 6px;
+      background: #12130f;
+      color: #eee9dc;
+      font: inherit;
+      font-size: 12.5px;
+      outline: none;
+    }
+    .menu-input:focus {
+      border-color: #d0a64a;
+      box-shadow: 0 0 0 2px rgba(208, 166, 74, .18);
+    }
+    .menu-input::placeholder { color: #7c786c; }
+
+    .menu-scroll {
+      overflow-y: auto;
+      padding: 0 6px 8px;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+    }
+    .menu-heading {
+      padding: 8px 8px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #979284;
+    }
+    .menu-section[hidden] { display: none; }
+    .menu-section + .menu-section .menu-heading {
+      margin-top: 4px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, .08);
+    }
+
+    .menu-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 6px;
+    }
+    .menu-row:hover { background: rgba(255, 255, 255, .055); }
+    .menu-row.is-current { background: rgba(208, 166, 74, .1); }
+
+    .menu-app {
+      appearance: none;
+      -webkit-appearance: none;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1px;
+      flex: 1 1 auto;
+      min-width: 0;
+      margin: 0;
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #e9e4d6;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .menu-app:focus-visible { outline: 2px solid #d0a64a; outline-offset: -2px; }
+    .menu-app-title {
+      display: block;
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12.5px;
+    }
+    .menu-row.is-current .menu-app-title { color: #f6e5b4; }
+    .menu-app-dir {
+      display: block;
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9.5px;
+      color: #7f7b6e;
+    }
+
+    .row-star {
+      appearance: none;
+      -webkit-appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      margin: 0 2px 0 0;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #6f6b60;
+      font: inherit;
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      flex: none;
+    }
+    .row-star:hover { background: rgba(255, 255, 255, .08); color: #f1d18a; }
+    .row-star[aria-pressed="true"] { color: #f1d18a; }
+    .row-star:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
+
+    .menu-empty {
+      padding: 18px 12px;
+      color: #979284;
+      font-size: 12.5px;
+      text-align: center;
+    }
+    .menu-empty[hidden] { display: none; }
 
     .actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
     .btn {
@@ -229,12 +458,18 @@
       .label { display: none; }
       .btn { padding: 0 8px; }
       .count { min-width: 0; }
-      .title { font-size: 12.5px; }
+      .title { font-size: 12.5px; padding: 0 4px; }
+      .menu {
+        left: 4px;
+        width: calc(100vw - 8px);
+        max-height: calc(100vh - 56px);
+      }
     }
     @media (max-width: 420px) {
       .leds { gap: 4px; padding: 0 5px; margin-left: -5px; }
       .count { font-size: 9px; }
       .peek-label { display: none; }
+      .menu-app-dir { display: none; }
     }
     @media (prefers-reduced-motion: reduce) {
       .bar, .peek, .led-tip { transition: none; }
@@ -318,7 +553,12 @@
           '</span>' +
           '<span class="count"></span>' +
         '</div>' +
-        '<div class="title"></div>' +
+        '<div class="title-wrap">' +
+          '<button class="title" type="button" aria-haspopup="dialog" aria-expanded="false" title="Show all apps">' +
+            '<span class="title-text"></span>' +
+            '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>' +
+          '</button>' +
+        '</div>' +
         '<div class="actions">' +
           '<button class="btn" type="button" data-act="prev" aria-label="Previous app" title="Previous app — [">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>' +
@@ -332,10 +572,36 @@
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 4l3 3-3 3"/><path d="M18 20l3-3-3-3"/><path d="M3 7h3c2 0 3.5 1 4.5 2.5l3 5C14.5 16 16 17 18 17h3"/><path d="M3 17h3c2 0 3.5-1 4.5-2.5l3-5C14.5 8 16 7 18 7h3"/></svg>' +
             '<span class="label">Random</span>' +
           '</button>' +
+          '<button class="btn" type="button" data-act="reload" aria-label="Reload app" title="Reload app — Shift+R">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>' +
+          '</button>' +
           '<span class="sep" aria-hidden="true"></span>' +
           '<button class="btn" type="button" data-act="hide" aria-label="Hide ribbon" title="Hide ribbon — H">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>' +
           '</button>' +
+        '</div>' +
+        '<div class="menu" hidden role="dialog" aria-label="All apps">' +
+          '<div class="menu-top">' +
+            '<div class="menu-current">' +
+              '<span class="menu-current-label">Current app</span>' +
+              '<span class="menu-current-title"></span>' +
+            '</div>' +
+            '<button class="star-btn" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>' +
+          '</div>' +
+          '<div class="menu-search">' +
+            '<input class="menu-input" type="search" placeholder="Search apps…" aria-label="Search apps" autocomplete="off" spellcheck="false">' +
+          '</div>' +
+          '<div class="menu-scroll">' +
+            '<div class="menu-section" data-section="favorites" hidden>' +
+              '<div class="menu-heading">Favorites</div>' +
+              '<div class="menu-list" data-list="favorites"></div>' +
+            '</div>' +
+            '<div class="menu-section" data-section="all">' +
+              '<div class="menu-heading">All apps</div>' +
+              '<div class="menu-list" data-list="all"></div>' +
+            '</div>' +
+            '<div class="menu-empty" hidden>No apps match.</div>' +
+          '</div>' +
         '</div>' +
       '</div>' +
       '<button class="peek" type="button" aria-label="Show ribbon" title="Show ribbon — H">' +
@@ -344,7 +610,8 @@
 
     var bar = shadow.querySelector(".bar");
     var countEl = shadow.querySelector(".count");
-    var titleEl = shadow.querySelector(".title");
+    var titleButton = shadow.querySelector(".title");
+    var titleText = shadow.querySelector(".title-text");
     var peekEl = shadow.querySelector(".peek");
     var ledRepo = shadow.querySelector('[data-led="repo"]');
     var ledSync = shadow.querySelector('[data-led="sync"]');
@@ -356,6 +623,17 @@
     var tipRepoText = ledTip.querySelector('[data-tip-text="repo"]');
     var tipSyncText = ledTip.querySelector('[data-tip-text="sync"]');
     var buttons = shadow.querySelectorAll("button[data-act]");
+
+    var menuEl = shadow.querySelector(".menu");
+    var menuCurrentTitle = shadow.querySelector(".menu-current-title");
+    var starCurrent = shadow.querySelector(".star-btn");
+    var searchInput = shadow.querySelector(".menu-input");
+    var menuFavSection = shadow.querySelector('[data-section="favorites"]');
+    var menuAllSection = shadow.querySelector('[data-section="all"]');
+    var menuFavList = shadow.querySelector('[data-list="favorites"]');
+    var menuAllList = shadow.querySelector('[data-list="all"]');
+    var menuAllHeading = menuAllSection.querySelector(".menu-heading");
+    var menuEmpty = shadow.querySelector(".menu-empty");
 
     var here = normalizePath(location.pathname);
     var index = -1;
@@ -382,10 +660,15 @@
       ? apps[index].title
       : pageTitle || (apps[index] && apps[index].title) || "Untitled";
 
-    titleEl.textContent = currentTitle;
-    titleEl.title = currentTitle;
+    var favorites = readFavorites();
+    var menuOpen = false;
+
+    titleText.textContent = currentTitle;
+    titleButton.title = "Show all apps";
+    menuCurrentTitle.textContent = currentTitle;
     countEl.textContent = (index >= 0 ? pad(index + 1, apps.length) : "—") + " / " + pad(apps.length, apps.length);
     setGit(apps[index] && apps[index].git);
+    updateCurrentStar();
 
     if (apps.length < 2) {
       for (var k = 0; k < buttons.length; k += 1) {
@@ -403,7 +686,10 @@
 
     function applyState() {
       var gone = manualHidden || autoHidden;
-      if (gone) closeTip();
+      if (gone) {
+        closeTip();
+        closeMenu(false);
+      }
       bar.classList.toggle("is-gone", gone);
       if (gone) bar.setAttribute("inert", "");
       else bar.removeAttribute("inert");
@@ -439,6 +725,178 @@
       var pick = Math.floor(Math.random() * choices);
       if (index >= 0 && pick >= index) pick += 1;
       location.assign(apps[pick].url);
+    }
+
+    function reloadApp() {
+      closeMenu(false);
+      location.reload();
+    }
+
+    function appKey(app) {
+      return app ? app.dir || app.path || app.url || "" : "";
+    }
+
+    function readFavorites() {
+      try {
+        var stored = JSON.parse(localStorage.getItem("ribbon:favorites") || "[]");
+        if (Array.isArray(stored)) {
+          return new Set(stored.filter(function (item) {
+            return typeof item === "string";
+          }));
+        }
+      } catch (_) {}
+      return new Set();
+    }
+
+    function saveFavorites() {
+      try {
+        localStorage.setItem("ribbon:favorites", JSON.stringify(Array.from(favorites)));
+      } catch (_) {}
+    }
+
+    function isFavorite(app) {
+      return !!app && favorites.has(appKey(app));
+    }
+
+    function currentApp() {
+      return index >= 0 ? apps[index] : null;
+    }
+
+    function updateCurrentStar() {
+      var app = currentApp();
+      var favorite = isFavorite(app);
+      var name = app ? app.title || "this app" : "this app";
+      var label = (favorite ? "Remove " : "Add ") +
+        name + (favorite ? " from favorites" : " to favorites");
+      starCurrent.disabled = !app;
+      starCurrent.setAttribute("aria-pressed", favorite ? "true" : "false");
+      starCurrent.textContent = favorite ? "★" : "☆";
+      starCurrent.title = label;
+      starCurrent.setAttribute("aria-label", label);
+    }
+
+    function favoriteRow(app, appIndex) {
+      var favorite = isFavorite(app);
+      var row = document.createElement("div");
+      row.className = "menu-row" + (appIndex === index ? " is-current" : "");
+
+      var open = document.createElement("button");
+      open.type = "button";
+      open.className = "menu-app";
+      open.setAttribute("data-app", String(appIndex));
+      if (appIndex === index) open.setAttribute("aria-current", "true");
+
+      var title = document.createElement("span");
+      title.className = "menu-app-title";
+      title.textContent = app.title || "Untitled";
+
+      var path = app.path || app.dir || "";
+      var dir = document.createElement("span");
+      dir.className = "menu-app-dir";
+      dir.textContent = path && path !== "." ? "/" + path : "/";
+
+      open.appendChild(title);
+      open.appendChild(dir);
+
+      var star = document.createElement("button");
+      star.type = "button";
+      star.className = "row-star";
+      star.setAttribute("data-star", appKey(app));
+      star.setAttribute("aria-pressed", favorite ? "true" : "false");
+      star.title = favorite ? "Remove from favorites" : "Add to favorites";
+      star.setAttribute(
+        "aria-label",
+        (favorite ? "Remove " : "Add ") +
+          (app.title || "app") +
+          (favorite ? " from favorites" : " to favorites")
+      );
+      star.textContent = favorite ? "★" : "☆";
+
+      row.appendChild(open);
+      row.appendChild(star);
+      return row;
+    }
+
+    function matchesQuery(app, query) {
+      if (!query) return true;
+      var haystack = String(app.title || "").toLowerCase() +
+        " " + String(app.path || app.dir || "").toLowerCase();
+      return haystack.indexOf(query) !== -1;
+    }
+
+    function renderMenu(query) {
+      var needle = (query || "").trim().toLowerCase();
+      menuFavList.textContent = "";
+      menuAllList.textContent = "";
+      var favoriteCount = 0;
+      var otherCount = 0;
+
+      apps.forEach(function (app, appIndex) {
+        if (!matchesQuery(app, needle)) return;
+        if (isFavorite(app)) {
+          menuFavList.appendChild(favoriteRow(app, appIndex));
+          favoriteCount += 1;
+        } else {
+          menuAllList.appendChild(favoriteRow(app, appIndex));
+          otherCount += 1;
+        }
+      });
+
+      menuFavSection.hidden = favoriteCount === 0;
+      menuAllSection.hidden = otherCount === 0;
+      menuEmpty.hidden = favoriteCount + otherCount > 0;
+      menuAllHeading.textContent = favoriteCount ? "Other apps" : "All apps";
+    }
+
+    function openMenu() {
+      if (!apps.length) return;
+      if (menuOpen) {
+        searchInput.focus();
+        searchInput.select();
+        return;
+      }
+      menuOpen = true;
+      menuEl.hidden = false;
+      titleButton.setAttribute("aria-expanded", "true");
+      searchInput.value = "";
+      renderMenu("");
+      updateCurrentStar();
+      requestAnimationFrame(function () {
+        searchInput.focus();
+        searchInput.select();
+      });
+    }
+
+    function closeMenu(returnFocus) {
+      if (!menuOpen) return;
+      menuOpen = false;
+      menuEl.hidden = true;
+      titleButton.setAttribute("aria-expanded", "false");
+      if (returnFocus) titleButton.focus();
+    }
+
+    function toggleMenu() {
+      if (menuOpen) closeMenu(true);
+      else openMenu();
+    }
+
+    function toggleFavorite(app, focusStar) {
+      var key = appKey(app);
+      if (!key) return;
+      if (favorites.has(key)) favorites.delete(key);
+      else favorites.add(key);
+      saveFavorites();
+      renderMenu(searchInput.value);
+      updateCurrentStar();
+      if (focusStar) {
+        var stars = menuEl.querySelectorAll("[data-star]");
+        for (var i = 0; i < stars.length; i += 1) {
+          if (stars[i].getAttribute("data-star") === key) {
+            stars[i].focus();
+            break;
+          }
+        }
+      }
     }
 
     function setGit(git) {
@@ -541,11 +999,71 @@
       if (action === "prev") go(-1);
       else if (action === "next") go(1);
       else if (action === "random") random();
+      else if (action === "reload") reloadApp();
       else if (action === "hide") setManual(true);
     });
     peekEl.addEventListener("click", function () {
       setManual(false);
     });
+
+    titleButton.addEventListener("click", toggleMenu);
+    starCurrent.addEventListener("click", function () {
+      var app = currentApp();
+      if (app) toggleFavorite(app, false);
+      starCurrent.focus();
+    });
+    searchInput.addEventListener("input", function () {
+      renderMenu(searchInput.value);
+    });
+    searchInput.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu(true);
+        return;
+      }
+      if (event.key === "Enter") {
+        var first = menuEl.querySelector(".menu-app");
+        if (first) {
+          event.preventDefault();
+          location.assign(apps[Number(first.getAttribute("data-app"))].url);
+        }
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        var first = menuEl.querySelector(".menu-app");
+        if (first) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    });
+    menuEl.addEventListener("click", function (event) {
+      var star = event.target && event.target.closest
+        ? event.target.closest(".row-star")
+        : null;
+      if (star) {
+        for (var i = 0; i < apps.length; i += 1) {
+          if (appKey(apps[i]) === star.getAttribute("data-star")) {
+            toggleFavorite(apps[i], true);
+            break;
+          }
+        }
+        return;
+      }
+
+      var row = event.target && event.target.closest
+        ? event.target.closest(".menu-app")
+        : null;
+      if (row) {
+        location.assign(apps[Number(row.getAttribute("data-app"))].url);
+      }
+    });
+    document.addEventListener("pointerdown", function (event) {
+      if (!menuOpen) return;
+      var path = event.composedPath ? event.composedPath() : [];
+      if (path.indexOf(menuEl) !== -1 || path.indexOf(titleButton) !== -1) return;
+      closeMenu(false);
+    }, true);
 
     ledsButton.addEventListener("click", function (event) {
       event.stopPropagation();
@@ -571,6 +1089,7 @@
       var event = pending;
       pending = null;
       if (manualHidden) return;
+      if (event && event.target && menuEl.contains(event.target)) return;
 
       var target = event && event.target;
       if (
@@ -616,6 +1135,19 @@
       }
 
       var key = event.key;
+      if (key === "Escape" && menuOpen) {
+        closeMenu(true);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (key === "/") {
+        openMenu();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (menuOpen) return;
       if (key === "Escape" && ledTip.classList.contains("is-open")) {
         closeTip();
         event.preventDefault();
@@ -626,8 +1158,10 @@
       var handled = true;
       if (key === "[") go(-1);
       else if (key === "]") go(1);
-      else if (key === "r" || key === "R") random();
-      else if (key === "h" || key === "H") toggleHidden();
+      else if (key === "r" || key === "R") {
+        if (event.shiftKey) reloadApp();
+        else random();
+      } else if (key === "h" || key === "H") toggleHidden();
       else handled = false;
 
       if (handled) {

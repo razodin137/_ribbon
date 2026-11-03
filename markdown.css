@@ -1,0 +1,238 @@
+body.rc-doc-body {
+  --rc-accent-deep: color-mix(in oklch, var(--rc-accent) 58%, var(--rc-ink));
+
+  display: block;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 72px 24px 56px;
+  overflow-x: clip;
+  background: var(--rc-desk);
+  color: var(--rc-ink);
+  font-family: var(--rc-font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.rc-doc {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 38px 44px 44px;
+  border: 1px solid var(--rc-rule);
+  border-radius: 3px;
+  background-color: var(--rc-paper);
+  background-image: var(--rc-grain);
+  box-shadow:
+    inset 0 1px 0 var(--rc-edge),
+    0 24px 56px var(--rc-shadow),
+    0 3px 10px var(--rc-shadow-tight);
+}
+
+.rc-doc-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 30px;
+  padding: 0 0 12px;
+  border-bottom: 1.5px solid var(--rc-ink);
+}
+
+.rc-kicker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--rc-ink-2);
+  font-family: var(--rc-font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.rc-kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--rc-accent);
+}
+
+.rc-doc-path {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--rc-muted);
+  font-family: var(--rc-font-mono);
+  font-size: 12px;
+}
+
+.rc-doc-path span {
+  color: var(--rc-ink-2);
+  font-weight: 600;
+}
+
+.rc-markdown {
+  color: var(--rc-ink-2);
+  font-size: 15.5px;
+  line-height: 1.7;
+}
+
+.rc-markdown > :first-child {
+  margin-top: 0;
+}
+
+.rc-markdown h1,
+.rc-markdown h2,
+.rc-markdown h3,
+.rc-markdown h4,
+.rc-markdown h5,
+.rc-markdown h6 {
+  margin: 1.7em 0 .55em;
+  color: var(--rc-ink);
+  font-family: var(--rc-font-display);
+  font-weight: 600;
+  letter-spacing: -.012em;
+  line-height: 1.2;
+}
+
+.rc-markdown h1 {
+  font-size: clamp(1.55rem, 4vw, 2rem);
+}
+
+.rc-markdown h2 {
+  padding-bottom: .3em;
+  border-bottom: 1px solid var(--rc-rule);
+  font-size: 1.45em;
+}
+
+.rc-markdown h3 {
+  font-size: 1.18em;
+}
+
+.rc-markdown h4,
+.rc-markdown h5,
+.rc-markdown h6 {
+  font-size: 1em;
+}
+
+.rc-markdown p,
+.rc-markdown ul,
+.rc-markdown ol,
+.rc-markdown blockquote,
+.rc-markdown pre,
+.rc-markdown .rc-table-wrap {
+  margin: 0 0 1.1em;
+}
+
+.rc-markdown ul,
+.rc-markdown ol {
+  padding-left: 1.5em;
+}
+
+.rc-markdown li + li {
+  margin-top: .3em;
+}
+
+.rc-markdown a {
+  color: var(--rc-accent-deep);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.rc-markdown strong {
+  color: var(--rc-ink);
+}
+
+.rc-markdown code {
+  padding: 2px 5px;
+  border: 1px solid var(--rc-rule);
+  border-radius: 2px;
+  background: var(--rc-paper-2);
+  color: var(--rc-ink);
+  font-family: var(--rc-font-mono);
+  font-size: .86em;
+}
+
+.rc-markdown pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--rc-rule);
+  border-radius: 2px;
+  background: var(--rc-paper-2);
+  line-height: 1.55;
+}
+
+.rc-markdown pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: .86em;
+}
+
+.rc-markdown blockquote {
+  padding: .1em 0 .1em 16px;
+  border-left: 3px solid var(--rc-accent);
+  color: var(--rc-muted);
+}
+
+.rc-markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.rc-markdown hr {
+  margin: 1.8em 0;
+  border: 0;
+  border-top: 1px solid var(--rc-rule);
+}
+
+.rc-markdown img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--rc-rule);
+  border-radius: 2px;
+}
+
+.rc-markdown input[type="checkbox"] {
+  margin: 0 .45em 0 0;
+  accent-color: var(--rc-accent-deep);
+}
+
+.rc-table-wrap {
+  overflow-x: auto;
+}
+
+.rc-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .92em;
+}
+
+.rc-markdown th,
+.rc-markdown td {
+  padding: 7px 10px;
+  border: 1px solid var(--rc-rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.rc-markdown th {
+  background: var(--rc-paper-2);
+  color: var(--rc-ink);
+  font-weight: 600;
+}
+
+@media (max-width: 560px) {
+  body.rc-doc-body {
+    padding: 20px 12px 40px;
+  }
+
+  .rc-doc {
+    padding: 24px 20px 28px;
+  }
+
+  .rc-doc-head {
+    margin-bottom: 24px;
+  }
+}

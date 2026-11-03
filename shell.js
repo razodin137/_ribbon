@@ -65,7 +65,9 @@
 
   const menuEl = document.getElementById("menu")
   const menuCurrentTitle = document.getElementById("menu-current-title")
+  const starTitle = document.getElementById("star-title")
   const starCurrent = document.getElementById("star-current")
+  const starButtons = [ starTitle, starCurrent ]
   const searchInput = document.getElementById("menu-input")
   const menuFavSection = menuEl.querySelector('[data-section="favorites"]')
   const menuAllSection = menuEl.querySelector('[data-section="all"]')
@@ -150,6 +152,11 @@
   })
 
   titleButton.addEventListener("click", toggleMenu)
+  starTitle.addEventListener("click", function () {
+    const app = currentApp()
+    if (app) toggleFavorite(app, false)
+    starTitle.focus()
+  })
   starCurrent.addEventListener("click", function () {
     const app = currentApp()
     if (app) toggleFavorite(app, false)
@@ -258,6 +265,9 @@
     if (app.kind === "project" && window.__RIBBON_CARD_HTML__) {
       frame.removeAttribute("src")
       frame.srcdoc = cardPage(app)
+    } else if (app.kind === "markdown" && app.markdownHtml) {
+      frame.removeAttribute("src")
+      frame.srcdoc = markdownPage(app)
     } else {
       frame.removeAttribute("srcdoc")
       frame.src = app.url
@@ -412,11 +422,41 @@
     setApp(pick)
   }
 
+  function escapeAttribute(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch]
+    })
+  }
+
   function cardPage(app) {
     return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<link rel="stylesheet" href="card.css"></head><body>' +
       window.__RIBBON_CARD_HTML__(app) + "</body></html>"
+  }
+
+  function markdownPage(app) {
+    const cardStylesheet = new URL("card.css", location.href).href
+    const markdownStylesheet = new URL("markdown.css", location.href).href
+    let base
+    try {
+      base = new URL(app.url || "", location.href).href.replace(/[^/]*$/, "")
+    } catch (error) {
+      base = ""
+    }
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      (base ? '<base href="' + escapeAttribute(base) + '">' : "") +
+      '<link rel="stylesheet" href="' + escapeAttribute(cardStylesheet) + '">' +
+      '<link rel="stylesheet" href="' + escapeAttribute(markdownStylesheet) + '">' +
+      '</head><body class="rc-doc-body">' +
+      (app.markdownHtml || "") + "</body></html>"
   }
 
   function appHash(app) {
@@ -427,7 +467,7 @@
   function reloadApp() {
     closeMenu(false)
     if (!apps.length) return
-    if (apps[index].kind === "project") {
+    if (apps[index].kind === "project" || apps[index].kind === "markdown") {
       setApp(index, false)
       return
     }
@@ -474,11 +514,14 @@
     const name = app ? app.title || "this app" : "this app"
     const label = (favorite ? "Remove " : "Add ") +
       name + (favorite ? " from favorites" : " to favorites")
-    starCurrent.disabled = !app
-    starCurrent.setAttribute("aria-pressed", favorite ? "true" : "false")
-    starCurrent.textContent = favorite ? "★" : "☆"
-    starCurrent.title = label
-    starCurrent.setAttribute("aria-label", label)
+    for (let i = 0; i < starButtons.length; i += 1) {
+      const button = starButtons[i]
+      button.disabled = !app
+      button.setAttribute("aria-pressed", favorite ? "true" : "false")
+      button.textContent = favorite ? "★" : "☆"
+      button.title = label
+      button.setAttribute("aria-label", label)
+    }
   }
 
   const LED_WORK = { ok: 0, warn: 1, bad: 2, off: 3 }
@@ -564,10 +607,11 @@
 
     const title = document.createElement("span")
     title.className = "menu-app-title"
-    if (app.kind === "project" && app.icon) {
+    if (app.icon) {
       const glyph = document.createElement("span")
       glyph.className = "menu-app-glyph"
       glyph.textContent = app.icon
+      glyph.title = app.type || "Project"
       glyph.setAttribute("aria-hidden", "true")
       if (app.color) glyph.style.color = app.color
       title.appendChild(glyph)

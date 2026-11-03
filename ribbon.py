@@ -20,7 +20,6 @@ Handy first commands:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -40,8 +39,18 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 APP_DIR = Path(__file__).resolve().parent
 VERSION = "1.2.0"
 HTML_SUFFIXES = (".html", ".htm")
+MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdown", ".mkd")
 CARD_ROUTE = "/__ribbon/card/"
 PREFERRED_HTML = ("index.html", "app.html", "main.html", "home.html", "site.html", "start.html")
+PREFERRED_MARKDOWN = (
+    "README.md",
+    "readme.md",
+    "README.markdown",
+    "readme.markdown",
+    "README.mdown",
+    "readme.mdown",
+    "index.md",
+)
 README_NAMES = ("README.md", "readme.md", "README.markdown", "README.txt", "README", "README.rst")
 README_COMMIT_MESSAGE = "Add README"
 MAX_README_CHARS = 20000
@@ -70,6 +79,7 @@ __pycache__/
 .next/
 .turbo/
 .parcel-cache/
+.scratch/
 .DS_Store
 dist/
 build/
@@ -81,6 +91,8 @@ coverage/
 .env.*
 !.env.example
 """
+
+SCRATCH_DIRS = (".scratch",)
 
 SECRET_NAMES = {
     ".env",
@@ -230,8 +242,30 @@ def clean_markdown(text: str) -> str:
     return " ".join(unescape(text).split())[:220]
 
 
-def readme_summary(path: Path) -> tuple[str, str]:
-    text = read_readme(path)
+def choose_markdown(filenames: list[str] | set[str]) -> str | None:
+    """Pick the Markdown file a folder should show."""
+    names = {
+        name: name
+        for name in filenames
+        if Path(name).suffix.lower() in MARKDOWN_SUFFIXES
+    }
+    if not names:
+        return None
+    lowered = {name.lower(): name for name in names}
+    for preferred in PREFERRED_MARKDOWN:
+        if preferred.lower() in lowered:
+            return lowered[preferred.lower()]
+    return sorted(names, key=str.lower)[0]
+
+
+def read_markdown(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[:250000]
+    except OSError:
+        return ""
+
+
+def markdown_summary(text: str) -> tuple[str, str]:
     if not text:
         return "", ""
     title = ""
@@ -255,6 +289,347 @@ def readme_summary(path: Path) -> tuple[str, str]:
         if len(" ".join(lines)) > 220:
             break
     return title, clean_markdown(" ".join(lines))
+
+
+def readme_summary(path: Path) -> tuple[str, str]:
+    return markdown_summary(read_readme(path))
+
+
+def _safe_url(url: str) -> str:
+    value = unescape(url).strip()
+    if re.match(r"(?i)^(?:javascript|vbscript|data):", value):
+        return "#"
+    return url
+
+
+def _inline_markdown(text: str) -> str:
+    codes: list[str] = []
+
+    def stash_code(match: re.Match) -> str:
+        codes.append("<code>" + escape(match.group(1)) + "</code>")
+        return f"\x00{len(codes) - 1}\x00"
+
+    text = re.sub(r"`([^`\n]+)`", stash_code, text)
+    text = escape(text)
+
+    def image(match: re.Match) -> str:
+        alt = match.group(1)
+        target = _safe_url(match.group(2).split()[0] if match.group(2).split() else "")
+        return f'<img src="{target}" alt="{alt}" loading="lazy">'
+
+    def link(match: re.Match) -> str:
+        label = match.group(1)
+        target = _safe_url(match.group(2).split()[0] if match.group(2).split() else "")
+        return f'<a href="{target}">{label}</a>'
+
+    text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", image, text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", link, text)
+    text = re.sub(r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"__([^_\n]+)__", r"<strong>\1</strong>", text)
+    text = re.sub(r"~~([^~\n]+)~~", r"<del>\1</del>", text)
+    text = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<em>\1</em>", text)
+    text = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"<em>\1</em>", text)
+    for index, code in enumerate(codes):
+        text = text.replace(f"\x00{index}\x00", code)
+    return text
+
+
+LIST_RE = re.compile(r"^(\s*)([-+*]|\d+[.)])\s+(.*)$")
+FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
+HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+SETEXT_RE = re.compile(r"^\s{0,3}(=+|-+)\s*$")
+RULE_RE = re.compile(
+    r"^\s{0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$"
+)
+TABLE_SEP_RE = re.compile(
+    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
+)
+
+
+def _table_cells(line: str) -> list[str]:
+    row = line.strip()
+    if row.startswith("|"):
+        row = row[1:]
+    if row.endswith("|"):
+        row = row[:-1]
+    return [cell.strip() for cell in row.split("|")]
+
+
+def _render_table(lines: list[str], index: int) -> tuple[str, int]:
+    headers = _table_cells(lines[index])
+    alignments: list[str] = []
+    for cell in _table_cells(lines[index + 1]):
+        if cell.startswith(":") and cell.endswith(":"):
+            alignments.append("center")
+        elif cell.endswith(":"):
+            alignments.append("right")
+        elif cell.startswith(":"):
+            alignments.append("left")
+        else:
+            alignments.append("")
+    index += 2
+    rows: list[list[str]] = []
+    while index < len(lines) and lines[index].strip() and "|" in lines[index]:
+        rows.append(_table_cells(lines[index]))
+        index += 1
+
+    def cell(tag: str, value: str, position: int) -> str:
+        align = alignments[position] if position < len(alignments) else ""
+        style = f' style="text-align: {align}"' if align else ""
+        return f"<{tag}{style}>{_inline_markdown(value)}</{tag}>"
+
+    head = "".join(cell("th", value, i) for i, value in enumerate(headers))
+    body = "".join(
+        "<tr>" + "".join(cell("td", value, i) for i, value in enumerate(row)) + "</tr>"
+        for row in rows
+    )
+    table = (
+        "<div class=\"rc-table-wrap\"><table><thead><tr>"
+        + head
+        + "</tr></thead><tbody>"
+        + body
+        + "</tbody></table></div>"
+    )
+    return table, index
+
+
+def _render_list(lines: list[str], index: int) -> tuple[str, int]:
+    first = LIST_RE.match(lines[index])
+    assert first is not None
+    base_indent = len(first.group(1))
+    ordered = first.group(2)[0].isdigit()
+    start_number = int(re.match(r"\d+", first.group(2)).group()) if ordered else 1
+    items: list[str] = []
+
+    while index < len(lines):
+        match = LIST_RE.match(lines[index])
+        if not match:
+            break
+        indent = len(match.group(1))
+        marker = match.group(2)
+        if indent != base_indent or marker[0].isdigit() != ordered:
+            break
+        content = [match.group(3)]
+        item_indent = indent + len(marker) + 1
+        index += 1
+        while index < len(lines):
+            following = lines[index]
+            if not following.strip():
+                lookahead = index
+                while lookahead < len(lines) and not lines[lookahead].strip():
+                    lookahead += 1
+                if lookahead < len(lines):
+                    next_item = LIST_RE.match(lines[lookahead])
+                    if next_item and len(next_item.group(1)) == base_indent:
+                        break
+                    if next_item and len(next_item.group(1)) > base_indent:
+                        content.append("")
+                        index = lookahead
+                        continue
+                    if len(lines[lookahead]) - len(lines[lookahead].lstrip()) > base_indent:
+                        content.append("")
+                        index = lookahead
+                        continue
+                break
+            next_item = LIST_RE.match(following)
+            if next_item and len(next_item.group(1)) == base_indent:
+                break
+            leading = len(following) - len(following.lstrip())
+            if leading > base_indent:
+                content.append(
+                    following[item_indent:]
+                    if len(following) >= item_indent
+                    else following.lstrip()
+                )
+                index += 1
+                continue
+            break
+        items.append("\n".join(content))
+
+    rendered: list[str] = []
+    for item in items:
+        task = ""
+        task_match = re.match(r"^\[([ xX])\]\s+(.*)$", item, re.DOTALL)
+        if task_match:
+            checked = task_match.group(1).lower() == "x"
+            task = '<input type="checkbox" disabled' + (" checked" if checked else "") + "> "
+            item = task_match.group(2)
+        body = _render_blocks(item).strip()
+        if body.startswith("<p>"):
+            end = body.find("</p>")
+            if end != -1:
+                body = body[3:end] + body[end + 4 :]
+        rendered.append("<li>" + task + body + "</li>")
+
+    if ordered:
+        start = f' start="{start_number}"' if start_number != 1 else ""
+        return "<ol" + start + ">" + "".join(rendered) + "</ol>", index
+    return "<ul>" + "".join(rendered) + "</ul>", index
+
+
+def _is_block_start(lines: list[str], index: int) -> bool:
+    line = lines[index]
+    if not line.strip():
+        return True
+    if FENCE_RE.match(line) or HEADING_RE.match(line) or RULE_RE.match(line):
+        return True
+    if line.lstrip().startswith(">") or LIST_RE.match(line):
+        return True
+    if index + 1 < len(lines) and SETEXT_RE.match(lines[index + 1]):
+        return True
+    return "|" in line and index + 1 < len(lines) and bool(
+        TABLE_SEP_RE.match(lines[index + 1])
+    )
+
+
+def _render_blocks(text: str) -> str:
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    output: list[str] = []
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            index += 1
+            continue
+
+        fence = FENCE_RE.match(line)
+        if fence:
+            marker = fence.group(1)
+            info = fence.group(2).strip()
+            code: list[str] = []
+            index += 1
+            closing = re.compile(
+                r"^\s{0,3}" + re.escape(marker[0]) + r"{" + str(len(marker)) + r",}\s*$"
+            )
+            while index < len(lines) and not closing.match(lines[index]):
+                code.append(lines[index])
+                index += 1
+            if index < len(lines):
+                index += 1
+            language = info.split()[0] if info else ""
+            css = f' class="language-{escape(language)}"' if language else ""
+            output.append(
+                "<pre><code" + css + ">" + escape("\n".join(code)) + "</code></pre>"
+            )
+            continue
+
+        heading = HEADING_RE.match(line)
+        if heading:
+            level = len(heading.group(1))
+            output.append(
+                f"<h{level}>{_inline_markdown(heading.group(2))}</h{level}>"
+            )
+            index += 1
+            continue
+
+        if (
+            index + 1 < len(lines)
+            and SETEXT_RE.match(lines[index + 1])
+            and line.strip()
+            and not LIST_RE.match(line)
+        ):
+            level = 1 if lines[index + 1].strip().startswith("=") else 2
+            output.append(
+                f"<h{level}>{_inline_markdown(line.strip())}</h{level}>"
+            )
+            index += 2
+            continue
+
+        if RULE_RE.match(line):
+            output.append("<hr>")
+            index += 1
+            continue
+
+        if line.lstrip().startswith(">"):
+            quote: list[str] = []
+            while index < len(lines) and (
+                lines[index].lstrip().startswith(">") or not lines[index].strip()
+            ):
+                quote.append(re.sub(r"^\s{0,3}>\s?", "", lines[index]))
+                index += 1
+            output.append(
+                "<blockquote>" + _render_blocks("\n".join(quote)) + "</blockquote>"
+            )
+            continue
+
+        if "|" in line and index + 1 < len(lines) and TABLE_SEP_RE.match(lines[index + 1]):
+            table, index = _render_table(lines, index)
+            output.append(table)
+            continue
+
+        if LIST_RE.match(line):
+            listing, index = _render_list(lines, index)
+            output.append(listing)
+            continue
+
+        if line.startswith("    ") or line.startswith("\t"):
+            code = []
+            while index < len(lines) and (
+                lines[index].startswith("    ")
+                or lines[index].startswith("\t")
+                or not lines[index].strip()
+            ):
+                code.append(
+                    lines[index][4:]
+                    if lines[index].startswith("    ")
+                    else lines[index].lstrip("\t")
+                )
+                index += 1
+            while code and not code[-1].strip():
+                code.pop()
+            output.append("<pre><code>" + escape("\n".join(code)) + "</code></pre>")
+            continue
+
+        paragraph = [line.strip()]
+        index += 1
+        while (
+            index < len(lines)
+            and lines[index].strip()
+            and not _is_block_start(lines, index)
+        ):
+            paragraph.append(lines[index].strip())
+            index += 1
+        output.append("<p>" + _inline_markdown(" ".join(paragraph)) + "</p>")
+
+    return "\n".join(output)
+
+
+def render_markdown(text: str) -> str:
+    return _render_blocks(text)
+
+
+def markdown_title(text: str, rel_path: str) -> str:
+    title, _ = markdown_summary(text)
+    if title:
+        return title
+    path = Path(rel_path)
+    stem = path.stem
+    if stem.lower().startswith("readme"):
+        parent = path.parent.as_posix()
+        return fallback_title("" if parent == "." else parent)
+    return fallback_title(stem)
+
+
+def markdown_view_html(rel_path: str, text: str) -> str:
+    path = Path(rel_path)
+    folder = path.parent.as_posix()
+    folder_label = "/" if folder in ("", ".") else "/" + folder + "/"
+    return (
+        '<main class="rc-doc">'
+        '<header class="rc-doc-head">'
+        '<p class="rc-kicker">Markdown</p>'
+        '<p class="rc-doc-path">'
+        + escape(folder_label)
+        + "<span>"
+        + escape(path.name)
+        + "</span></p>"
+        "</header>"
+        '<article class="rc-markdown">'
+        + render_markdown(text)
+        + "</article>"
+        "</main>"
+    )
 
 
 def project_kind(path: Path, filenames: list[str]) -> dict | None:
@@ -308,7 +683,7 @@ def project_kind(path: Path, filenames: list[str]) -> dict | None:
     if js_files:
         entry = pick("index.js", "main.js", "server.js", "app.js") or js_files[0]
         return {"type": "Node", "icon": "JS", "run": f"node {entry}"}
-    if pick("readme.md", "readme.markdown", "readme.txt", "readme.rst", "readme"):
+    if pick("readme.txt", "readme.rst", "readme"):
         return {"type": "Project", "icon": "MD", "run": ""}
     return None
 
@@ -333,10 +708,48 @@ def folder_entries(path: Path) -> list[str]:
     return entries
 
 
-def accent_color(rel_dir: str) -> str:
-    digest = hashlib.sha1(rel_dir.encode("utf-8")).digest()
-    hue = digest[0] * 360 // 256
-    return f"hsl({hue} 46% 62%)"
+TYPE_COLORS = {
+    "HTML": "hsl(28 64% 62%)",
+    "Markdown": "hsl(250 34% 68%)",
+    "Python": "hsl(135 42% 58%)",
+    "Shell": "hsl(220 8% 62%)",
+    "Node": "hsl(48 58% 60%)",
+    "Rust": "hsl(14 60% 60%)",
+    "Go": "hsl(190 48% 58%)",
+    "Ruby": "hsl(349 52% 62%)",
+    "Make": "hsl(282 28% 65%)",
+    "Docker": "hsl(205 50% 62%)",
+    "Project": "hsl(40 10% 62%)",
+}
+DEFAULT_TYPE_COLOR = "hsl(40 10% 62%)"
+
+
+def type_color(app_type: str) -> str:
+    """One fixed accent per kind of code, so equal projects look equal."""
+    return TYPE_COLORS.get(app_type, DEFAULT_TYPE_COLOR)
+
+
+def markdown_info(path: Path, rel_dir: str) -> dict | None:
+    try:
+        filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
+    except OSError:
+        return None
+    name = choose_markdown(filenames)
+    if not name:
+        return None
+    text = read_markdown(path / name)
+    rel_path = name if rel_dir == "." else f"{rel_dir}/{name}"
+    return {
+        "kind": "markdown",
+        "title": markdown_title(text, rel_path),
+        "description": markdown_summary(text)[1],
+        "type": "Markdown",
+        "icon": "MD",
+        "run": "",
+        "files": folder_entries(path),
+        "color": type_color("Markdown"),
+        "markdown_path": rel_path,
+    }
 
 
 def project_info(path: Path, rel_dir: str) -> dict | None:
@@ -346,7 +759,7 @@ def project_info(path: Path, rel_dir: str) -> dict | None:
         return None
     kind = project_kind(path, filenames)
     if not kind:
-        return None
+        return markdown_info(path, rel_dir)
     title, description = readme_summary(path)
     return {
         "kind": "project",
@@ -356,7 +769,7 @@ def project_info(path: Path, rel_dir: str) -> dict | None:
         "icon": kind["icon"],
         "run": kind["run"],
         "files": folder_entries(path),
-        "color": accent_color(rel_dir),
+        "color": type_color(kind["type"]),
     }
 
 
@@ -378,7 +791,7 @@ def is_app_folder(path: Path) -> bool:
     html = choose_html(filenames)
     if html:
         return not is_shell_page(path / html)
-    return project_kind(path, filenames) is not None
+    return project_kind(path, filenames) is not None or choose_markdown(filenames) is not None
 
 
 def is_shell_page(path: Path) -> bool:
@@ -566,10 +979,99 @@ def parse_status_files(output: str) -> list[dict]:
     return files
 
 
-def file_warnings(root: Path, files: list[dict]) -> list[str]:
+def _git_ignored(path: Path, relative: str) -> bool:
+    try:
+        proc = _git(path, ["check-ignore", "-q", "--", relative], 4)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
+def _git_tracked(path: Path, relative: str) -> bool:
+    return bool(_git_text(path, ["ls-files", "--", relative]))
+
+
+def _git_in_head(path: Path, relative: str) -> bool:
+    return bool(_git_text(path, ["ls-tree", "--name-only", "HEAD", "--", relative]))
+
+
+def find_scratch_dirs(root: Path) -> list[Path]:
+    """Every .scratch folder under root, skipping build and vendor folders."""
+    found: list[Path] = []
+    for dirpath, dirnames, _ in os.walk(root):
+        dirnames[:] = sorted(
+            name for name in dirnames if name != ".git" and name not in SKIP_DIRS
+        )
+        for name in SCRATCH_DIRS:
+            if name in dirnames:
+                found.append(Path(dirpath) / name)
+                dirnames.remove(name)
+    return found
+
+
+def _plain_gitignore_covers(root: Path, name: str) -> bool:
+    """Best-effort .gitignore check for folders that are not a repo yet."""
+    try:
+        text = (root / ".gitignore").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", "!")):
+            continue
+        pattern = line.lstrip("/").rstrip("/")
+        if pattern in (name, f"{name}/*", f"**/{name}", "*", ".*"):
+            return True
+    return False
+
+
+def scratch_warnings(root: Path, repo: bool) -> list[str]:
+    warnings: list[str] = []
+    for target in find_scratch_dirs(root):
+        rel = target.relative_to(root).as_posix()
+        label = rel + "/"
+        if repo and _git_tracked(root, rel):
+            warnings.append(
+                f"{label} is tracked by Git and would be published. "
+                f"Remove it with: git rm -r --cached {rel}"
+            )
+            continue
+        if repo and _git_ignored(root, rel):
+            continue
+        if not repo and _plain_gitignore_covers(root, target.name):
+            continue
+        warnings.append(
+            f"{label} is not gitignored — add {rel}/ to .gitignore "
+            "so it is not published."
+        )
+    return warnings
+
+
+def gitignore_requirement(root: Path, include_untracked: bool = True) -> str | None:
+    """Block commits and pushes that would publish a .scratch folder."""
+    for target in find_scratch_dirs(root):
+        rel = target.relative_to(root).as_posix()
+        if _git_tracked(root, rel):
+            return (
+                f"{rel}/ is tracked by Git, so its files would be published.\n"
+                f"Remove it from the repository first:\n"
+                f"  git rm -r --cached {rel}\n"
+                f"  printf '{rel}/\\n' >> .gitignore"
+            )
+        if include_untracked and not _git_ignored(root, rel):
+            return (
+                f"{rel}/ is not gitignored, so it would be committed.\n"
+                f"Add it to .gitignore first:\n"
+                f"  printf '{rel}/\\n' >> .gitignore"
+            )
+    return None
+
+
+def file_warnings(root: Path, files: list[dict], repo: bool = False) -> list[str]:
     warnings: list[str] = []
     if files and not (root / ".gitignore").is_file():
         warnings.append("No .gitignore — generated folders may be committed.")
+    warnings.extend(scratch_warnings(root, repo))
 
     secrets_found: list[str] = []
     large_found: list[str] = []
@@ -618,7 +1120,7 @@ def git_detail(path: Path) -> dict:
         detail["files"] = files
         detail["dirty_count"] = len(files)
         detail["warnings"] = file_warnings(path, files)
-        detail["pages"] = pages_state(path)
+        detail["pages"] = pages_detail(path)
         return detail
 
     root_text = _git_text(path, ["rev-parse", "--show-toplevel"])
@@ -646,13 +1148,13 @@ def git_detail(path: Path) -> dict:
     detail["remote_url"] = _git_text(root, ["remote", "get-url", "origin"]) or None
     detail["files"] = files
     detail["dirty_count"] = len(files)
-    detail["warnings"] = file_warnings(root, files)
+    detail["warnings"] = file_warnings(root, files, repo=True)
     detail["has_gitignore"] = (root / ".gitignore").is_file()
     detail["readme"] = readme_state(root)
     detail["identity_ok"] = bool(_git_text(root, ["config", "user.name"])) and bool(
         _git_text(root, ["config", "user.email"])
     )
-    detail["pages"] = pages_state(root)
+    detail["pages"] = pages_detail(root, repo=True)
     return detail
 
 
@@ -820,6 +1322,10 @@ def git_init(target: Path, message: str, make_gitignore: bool) -> dict:
         except OSError as exc:
             return _action_error(f"Could not write .gitignore: {exc}", output)
 
+    blocked = gitignore_requirement(target)
+    if blocked:
+        return _action_error(blocked, output)
+
     ok, add_output = _run_git_step(target, ["add", "-A"], 60)
     output = "\n".join(part for part in (output, add_output) if part)
     if not ok:
@@ -850,6 +1356,10 @@ def git_commit(target: Path, message: str) -> dict:
     root = _repo_root(target) or target
     message = _clean_message(message, f"Update {target.name}")
 
+    blocked = gitignore_requirement(root)
+    if blocked:
+        return _action_error(blocked)
+
     ok, add_output = _run_git_step(root, ["add", "-A"], 60)
     if not ok:
         return _action_error("Could not stage the files.", add_output)
@@ -876,6 +1386,9 @@ def git_push(target: Path) -> dict:
         return _action_error("There is no remote. Create one first.")
 
     root = _repo_root(target) or target
+    blocked = gitignore_requirement(root, include_untracked=False)
+    if blocked:
+        return _action_error(blocked)
     ok, output = _push_branch(root, status)
     if not ok:
         return _action_error("The push failed.", output)
@@ -898,6 +1411,17 @@ def _github_pages_url(owner: str, name: str) -> str:
     return f"https://{owner_lower}.github.io/{name_lower}/"
 
 
+def _index_case_mismatch(path: Path) -> str | None:
+    try:
+        names = sorted(entry.name for entry in path.iterdir() if entry.is_file())
+    except OSError:
+        return None
+    for name in names:
+        if name != "index.html" and name.lower() == "index.html":
+            return name
+    return None
+
+
 def pages_state(path: Path) -> dict:
     try:
         names = [entry.name for entry in path.iterdir() if entry.is_file()]
@@ -906,29 +1430,75 @@ def pages_state(path: Path) -> dict:
     return {
         "index": (path / "index.html").is_file(),
         "entry": choose_html(names),
+        "case_mismatch": _index_case_mismatch(path),
     }
 
 
-def pages_requirement(root: Path) -> str | None:
-    if (root / "index.html").is_file():
-        return None
-    entry = pages_state(root)["entry"]
-    if entry:
+def pages_requirement(
+    root: Path, state: dict | None = None, repo: bool | None = None
+) -> str | None:
+    """Why GitHub Pages would not serve this folder, or None when it will."""
+    state = state if state is not None else pages_state(root)
+    if not state["index"]:
+        mismatch = state.get("case_mismatch")
+        if mismatch:
+            return (
+                "GitHub Pages is case-sensitive and needs a lowercase index.html. "
+                f"This folder has {mismatch}. Rename it to index.html, then "
+                "publish again."
+            )
+        entry = state["entry"]
+        if entry:
+            return (
+                "GitHub Pages needs an index.html at the repository root. "
+                f"This repo's page is {entry}. Rename it to index.html, or "
+                "create an index.html that opens it."
+            )
         return (
             "GitHub Pages needs an index.html at the repository root. "
-            f"This repo's page is {entry}. Rename it to index.html, or "
-            "create an index.html that opens it."
+            "Add one, then publish again."
         )
-    return (
-        "GitHub Pages needs an index.html at the repository root. "
-        "Add one, then publish again."
-    )
+
+    if repo is None:
+        repo = _repo_root(root) is not None
+    if repo:
+        head = bool(_git_text(root, ["rev-parse", "--verify", "HEAD"]))
+        in_head = _git_in_head(root, "index.html")
+        if not in_head and _git_ignored(root, "index.html"):
+            return (
+                "GitHub Pages only serves files that Git publishes, but "
+                "index.html is ignored by .gitignore. Unignore it, commit it, "
+                "then publish again."
+            )
+        if head and not in_head:
+            return (
+                "GitHub Pages only serves committed files, but index.html is "
+                "not in the last commit. Commit and push it, then publish again."
+            )
+    return None
+
+
+def pages_detail(root: Path, repo: bool = False) -> dict:
+    state = pages_state(root)
+    state["problem"] = pages_requirement(root, state, repo=repo)
+    return state
 
 
 def git_create_pages_entry(target: Path) -> dict:
     root = _repo_root(target) or target
     if (root / "index.html").is_file():
         return _action_error("This repository already has an index.html.")
+    mismatch = _index_case_mismatch(root)
+    if mismatch:
+        return _action_error(
+            "GitHub Pages is case-sensitive and needs a lowercase index.html. "
+            f"This repository has {mismatch}. Rename it to index.html first."
+        )
+    if _git_ignored(root, "index.html"):
+        return _action_error(
+            "index.html would be ignored by .gitignore. Unignore it before "
+            "creating the Pages entry."
+        )
     try:
         names = [entry.name for entry in root.iterdir() if entry.is_file()]
     except OSError as exc:
@@ -937,6 +1507,11 @@ def git_create_pages_entry(target: Path) -> dict:
     if not entry:
         return _action_error(
             "No HTML page was found. Add one first, then create the Pages entry."
+        )
+    if _git_ignored(root, entry):
+        return _action_error(
+            f"{entry} is ignored by .gitignore, so the Pages entry could not "
+            "open it. Unignore it first."
         )
     href = quote(entry)
     page = (
@@ -1024,6 +1599,10 @@ def git_create_remote(
         )
     if visibility not in ("private", "public"):
         return _action_error("Choose private or public visibility.")
+
+    blocked = gitignore_requirement(root, include_untracked=False)
+    if blocked:
+        return _action_error(blocked)
 
     prep = _add_readme(root, readme)
     if not prep["ok"]:
@@ -1126,6 +1705,16 @@ def git_enable_pages(target: Path, readme: str = "") -> dict:
     missing = pages_requirement(root)
     if missing:
         return _action_error(missing)
+
+    if not status.get("upstream") or status.get("ahead"):
+        return _action_error(
+            "GitHub Pages only serves files that have been pushed. Push your "
+            "commits first, then publish again."
+        )
+
+    blocked = gitignore_requirement(root, include_untracked=False)
+    if blocked:
+        return _action_error(blocked)
 
     prep = _add_readme(root, readme)
     if not prep["ok"]:
@@ -1238,26 +1827,35 @@ def discover(
                 "file": "/" + quote(rel_file, safe="/"),
                 "path": rel_dir,
                 "title": title or fallback_title(rel_dir),
+                "type": "HTML",
+                "icon": "HTML",
                 "mtime": mtime,
-                "color": accent_color(rel_dir),
+                "color": type_color("HTML"),
             }
             if with_git:
                 app["git"] = git_status(directory, max_age=git_max_age)
             apps.append(app)
             continue
 
-        info = project_info(directory, directory.relative_to(root).as_posix())
+        rel_dir = directory.relative_to(root).as_posix()
+        info = project_info(directory, rel_dir)
         if not info or has_git_ancestor(directory, root):
             continue
         try:
             mtime = int(directory.stat().st_mtime)
         except OSError:
             mtime = 0
-        rel_dir = directory.relative_to(root).as_posix()
+        if info["kind"] == "markdown":
+            rel_file = info.get("markdown_path") or rel_dir
+            url = "/" + quote(rel_file, safe="/")
+            file = url
+        else:
+            url = CARD_ROUTE + (quote(rel_dir, safe="/") + "/" if rel_dir != "." else "")
+            file = ""
         app = {
             **info,
-            "url": CARD_ROUTE + (quote(rel_dir, safe="/") + "/" if rel_dir != "." else ""),
-            "file": "",
+            "url": url,
+            "file": file,
             "path": rel_dir,
             "mtime": mtime,
         }
@@ -1313,9 +1911,8 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
         if app["kind"] == "project":
             url = "project:" + app["path"]
         else:
-            url = os.path.relpath(
-                root / app["file"].lstrip("/"), APP_DIR
-            ).replace(os.sep, "/")
+            rel_file = unquote(app["file"]).lstrip("/")
+            url = os.path.relpath(root / rel_file, APP_DIR).replace(os.sep, "/")
         fields = [
             "url: " + json.dumps(url, ensure_ascii=False),
             "title: " + json.dumps(app["title"], ensure_ascii=False),
@@ -1328,6 +1925,11 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
         fields.append("mtime: " + str(int(app.get("mtime") or 0)))
         if app.get("files"):
             fields.append("files: " + js_literal(app["files"]))
+        if app["kind"] == "markdown":
+            markdown_path = app.get("markdown_path") or unquote(app["file"]).lstrip("/")
+            text = read_markdown(root / markdown_path)
+            html = markdown_view_html(markdown_path, text)
+            fields.append("markdownHtml: " + json.dumps(html, ensure_ascii=False))
         fields.append("git: " + js_literal(app["git"]))
         comma = "," if index < len(apps) - 1 else ""
         lines.append("  { " + ", ".join(fields) + " }" + comma)
@@ -1493,16 +2095,25 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                 html = choose_html(names)
                 if html:
                     index = target / html
-                elif project_kind(target, names):
+                else:
                     rel = target.relative_to(self.root.resolve()).as_posix()
-                    return self._serve_card(
-                        CARD_ROUTE + (quote(rel, safe="/") + "/" if rel != "." else ""),
-                        head,
-                    )
+                    info = project_info(target, rel)
+                    if info and info["kind"] == "markdown":
+                        markdown = info.get("markdown_path")
+                        if markdown:
+                            index = self.root.resolve() / markdown
+                    elif info:
+                        return self._serve_card(
+                            CARD_ROUTE + (quote(rel, safe="/") + "/" if rel != "." else ""),
+                            head,
+                        )
             target = index
 
-        if target.is_file() and target.suffix.lower() in (".html", ".htm"):
+        if target.is_file() and target.suffix.lower() in HTML_SUFFIXES:
             return self._serve_html(target, head)
+
+        if target.is_file() and target.suffix.lower() in MARKDOWN_SUFFIXES:
+            return self._serve_markdown(target, head)
 
         if head:
             super().do_HEAD()
@@ -1525,6 +2136,40 @@ class RibbonHandler(SimpleHTTPRequestHandler):
         if not head:
             self.wfile.write(data)
 
+    def _serve_markdown(self, target: Path, head: bool) -> None:
+        try:
+            resolved = target.resolve()
+            rel = resolved.relative_to(self.root.resolve()).as_posix()
+            text = read_markdown(resolved)
+        except (OSError, ValueError):
+            self.send_error(404, "File not found")
+            return
+
+        doc = (
+            "<!doctype html>\n"
+            '<html lang="en">\n'
+            "<head>\n"
+            '<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            f"<title>{escape(markdown_title(text, rel))}</title>\n"
+            '<link rel="stylesheet" href="/__ribbon/card.css">\n'
+            '<link rel="stylesheet" href="/__ribbon/markdown.css">\n'
+            "</head>\n"
+            '<body class="rc-doc-body">\n'
+            + markdown_view_html(rel, text)
+            + "\n</body>\n"
+            "</html>\n"
+        ).encode("utf-8")
+        payload = inject_html(doc, self.token if self.write_enabled else "")
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.end_headers()
+        if not head:
+            self.wfile.write(payload)
+
     def _serve_card(self, raw_path: str, head: bool) -> None:
         rel = unquote(raw_path[len(CARD_ROUTE) :]).strip("/")
         rel = rel or "."
@@ -1540,7 +2185,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
 
         rel_dir = target.relative_to(self.root.resolve()).as_posix()
         info = project_info(target, rel_dir)
-        if not info:
+        if not info or info["kind"] != "project":
             self.send_error(404, "No project here")
             return
         info["path"] = rel_dir
@@ -1602,6 +2247,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                 content_type = "text/javascript; charset=utf-8"
             elif name == "card.css":
                 payload = (APP_DIR / "card.css").read_bytes()
+                content_type = "text/css; charset=utf-8"
+            elif name == "markdown.css":
+                payload = (APP_DIR / "markdown.css").read_bytes()
                 content_type = "text/css; charset=utf-8"
             elif name == "git.json":
                 requested = (parse_qs(urlsplit(self.path).query).get("dir") or [""])[0]

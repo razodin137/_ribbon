@@ -203,8 +203,15 @@
   .title-wrap {
     display: flex;
     align-items: center;
+    gap: 4px;
     flex: 1 1 auto;
     min-width: 0;
+  }
+
+  .title-star {
+    width: 26px;
+    height: 26px;
+    border-color: transparent;
   }
 
   .title {
@@ -974,6 +981,7 @@
       <span class="count" id="count"></span>
     </div>
     <div class="title-wrap">
+      <button class="star-btn title-star" id="star-title" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>
       <button class="title" id="title" type="button" aria-haspopup="dialog" aria-expanded="false" title="Show all apps">
         <span class="title-text" id="title-text"></span>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>

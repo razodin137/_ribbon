@@ -4,7 +4,7 @@
   "type": "module",
   "description": "A little bar at the top of your screen for switching between local apps.",
   "scripts": {
-    "lint": "eslint . && stylelint \"index.html\" \"card.css\""
+    "lint": "eslint . && stylelint \"index.html\" \"card.css\" \"markdown.css\""
   },
   "devDependencies": {
     "@37signals/eslint-config": "file:/home/mrjohn/Work/tries/2026-11-03-house-style/house-style/eslint-config",

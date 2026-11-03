@@ -1,8 +1,25 @@
+/* Hallmark · component: project card · genre: editorial · theme: catalog card
+ * states: static (no interactive controls)
+ * contrast: pass (40–41) · tokens: pass (48) · responsive: pass (34, 49–51)
+ * pre-emit critique: P5 H4 E5 S5 R5 V5
+ */
+
 :root {
-  --rc-ink: #eee9dc;
-  --rc-muted: #979284;
-  --rc-line: rgba(255, 255, 255, .13);
-  --rc-accent: #d0a64a;
+  --rc-paper: oklch(95% 0.017 85);
+  --rc-paper-2: oklch(91% 0.021 82);
+  --rc-rule: oklch(82% 0.018 80);
+  --rc-ink: oklch(24% 0.02 65);
+  --rc-ink-2: oklch(38% 0.018 68);
+  --rc-muted: oklch(47% 0.016 70);
+  --rc-desk: oklch(16% 0.012 95);
+  --rc-accent: oklch(70% 0.11 80);
+  --rc-edge: oklch(98% 0.006 85 / .55);
+  --rc-shadow: oklch(9% 0.01 90 / .55);
+  --rc-shadow-tight: oklch(9% 0.01 90 / .38);
+  --rc-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' fill='%23302a20' filter='url(%23g)' opacity='0.06'/%3E%3C/svg%3E");
+  --rc-font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", ui-serif, Georgia, serif;
+  --rc-font-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --rc-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 *,
@@ -14,166 +31,155 @@
 html {
   min-height: 100%;
   margin: 0;
+  overflow-x: clip;
+  background: var(--rc-desk);
 }
 
 body {
   display: flex;
   align-items: center;
+  align-items: safe center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
-  padding: 40px 20px 64px;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(208, 166, 74, .1), transparent 46%),
-    #101210;
+  padding: 72px 24px 56px;
+  overflow-x: clip;
+  background: var(--rc-desk);
   color: var(--rc-ink);
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 14px;
+  font-family: var(--rc-font-body);
+  font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
 .rc-card {
+  --rc-accent-deep: color-mix(in oklch, var(--rc-accent) 58%, var(--rc-ink));
+
   position: relative;
-  width: min(640px, 100%);
-  padding: 30px 32px 24px;
-  overflow: hidden;
-  border: 1px solid var(--rc-line);
-  border-radius: 14px;
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, .055), transparent 44%),
-    #171916;
+  width: min(680px, 100%);
+  padding: 32px 32px 24px;
+  border: 1px solid var(--rc-rule);
+  border-radius: 3px;
+  background-color: var(--rc-paper);
+  background-image: var(--rc-grain);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, .42),
-    inset 0 1px 0 rgba(255, 255, 255, .06);
-}
-
-.rc-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--rc-accent);
-}
-
-.rc-glow {
-  position: absolute;
-  top: -120px;
-  left: -80px;
-  width: 280px;
-  height: 280px;
-  border-radius: 50%;
-  background: var(--rc-accent);
-  opacity: .13;
-  filter: blur(70px);
-  pointer-events: none;
+    inset 0 1px 0 var(--rc-edge),
+    0 24px 56px var(--rc-shadow),
+    0 3px 10px var(--rc-shadow-tight);
 }
 
 .rc-head {
-  position: relative;
   display: flex;
   gap: 16px;
-  align-items: center;
+  align-items: flex-start;
 }
 
-.rc-glyph {
+.rc-stamp {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   flex: none;
-  border: 1px solid var(--rc-accent);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, .03);
-  color: var(--rc-accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 16px;
+  border: 1.5px solid var(--rc-ink);
+  border-radius: 2px;
+  background: var(--rc-paper-2);
+  box-shadow: inset 0 0 0 4px var(--rc-paper);
+  color: var(--rc-ink);
+  font-family: var(--rc-font-mono);
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: .04em;
-  box-shadow: 0 0 24px rgba(208, 166, 74, .14);
+  letter-spacing: .08em;
 }
 
 .rc-titles {
   min-width: 0;
 }
 
-.rc-kicker {
-  margin: 0 0 2px;
-  color: var(--rc-muted);
-  font-size: 10px;
+.rc-type {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 8px;
+  color: var(--rc-ink-2);
+  font-family: var(--rc-font-body);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: .13em;
-  text-transform: uppercase;
+  letter-spacing: .01em;
+}
+
+.rc-type::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--rc-accent);
 }
 
 .rc-title {
   margin: 0;
-  font-size: 24px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--rc-ink);
+  font-family: var(--rc-font-display);
+  font-size: clamp(1.45rem, 3.6vw, 2.05rem);
   font-weight: 600;
-  letter-spacing: -.01em;
-  line-height: 1.2;
+  letter-spacing: -.012em;
+  line-height: 1.14;
 }
 
 .rc-desc {
-  position: relative;
-  margin: 20px 0 0;
-  color: #cbc6b7;
-  font-size: 14px;
-  line-height: 1.6;
+  margin: 16px 0 0;
+  max-width: 62ch;
+  overflow-wrap: anywhere;
+  color: var(--rc-ink-2);
+  font-size: 14.5px;
+  line-height: 1.62;
 }
 
-.rc-meta {
-  display: flex;
-  gap: 28px;
-  margin: 22px 0 0;
-  padding: 14px 0;
-  border-top: 1px solid var(--rc-line);
-  border-bottom: 1px solid var(--rc-line);
+.rc-facts {
+  margin: 24px 0 0;
+  border-top: 1.5px solid var(--rc-ink);
 }
 
-.rc-meta div {
+.rc-fact {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 16px;
+  align-items: baseline;
+  padding: 12px 0;
+}
+
+.rc-fact + .rc-fact {
+  border-top: 1px solid var(--rc-rule);
+}
+
+.rc-fact dt {
+  color: var(--rc-muted);
+  font-family: var(--rc-font-body);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.rc-fact dd {
+  margin: 0;
   min-width: 0;
-}
-
-.rc-meta dt {
-  color: var(--rc-muted);
-  font-size: 9.5px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
-
-.rc-meta dd {
-  margin: 3px 0 0;
-  overflow: hidden;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rc-block {
-  margin: 22px 0 0;
-}
-
-.rc-label {
-  margin: 0 0 8px;
-  color: var(--rc-muted);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: .14em;
-  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: var(--rc-ink-2);
+  font-family: var(--rc-font-mono);
+  font-size: 12.5px;
 }
 
 .rc-run {
-  display: block;
-  padding: 12px 14px;
-  border: 1px solid var(--rc-line);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, .34);
-  color: #f0d79b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
+  display: inline-block;
+  max-width: 100%;
+  padding: 4px 8px;
   overflow-x: auto;
+  border: 1px solid var(--rc-rule);
+  border-radius: 2px;
+  background: var(--rc-paper-2);
+  color: var(--rc-ink);
+  vertical-align: baseline;
   white-space: nowrap;
 }
 
@@ -185,7 +191,7 @@ body {
 .rc-files-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 14px;
+  gap: 4px 24px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -193,52 +199,82 @@ body {
 
 .rc-file {
   overflow: hidden;
-  padding: 3px 0;
-  color: #c3bda9;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 11.5px;
+  color: var(--rc-ink-2);
+  font-family: var(--rc-font-mono);
+  font-size: 12px;
+  line-height: 1.7;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rc-file.is-folder {
-  color: var(--rc-accent);
-}
-
-.rc-file.is-folder::before {
-  content: "▸ ";
-  opacity: .65;
+  color: var(--rc-accent-deep);
+  font-weight: 600;
 }
 
 .rc-empty {
   margin: 0;
   color: var(--rc-muted);
-  font-size: 12px;
+  font-family: var(--rc-font-body);
+  font-size: 12.5px;
 }
 
 .rc-foot {
-  margin-top: 26px;
-  color: #6d685c;
-  font-size: 9.5px;
-  letter-spacing: .12em;
-  text-align: right;
-  text-transform: uppercase;
+  margin: 24px 0 0;
+  color: var(--rc-muted);
+  font-family: var(--rc-font-body);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 560px) {
   body {
-    padding: 20px 12px 48px;
+    padding: 20px 12px 40px;
   }
 
   .rc-card {
-    padding: 24px 22px 20px;
+    padding: 24px 20px 20px;
+  }
+
+  .rc-head {
+    gap: 16px;
+  }
+
+  .rc-stamp {
+    width: 40px;
+    height: 40px;
+    box-shadow: inset 0 0 0 3px var(--rc-paper);
+    font-size: 12px;
+  }
+
+  .rc-type {
+    font-size: 11.5px;
   }
 
   .rc-title {
-    font-size: 20px;
+    font-size: 1.35rem;
+  }
+
+  .rc-fact {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 8px 0;
   }
 
   .rc-files-list {
     grid-template-columns: 1fr;
+  }
+
+  .rc-run {
+    overflow-x: visible;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .rc-file {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
   }
 }

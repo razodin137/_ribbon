@@ -68,8 +68,9 @@ lights to read its Git status.
 
 ## Favorites
 
-The star at the top of the app menu saves the app you are looking at.
-Stars next to every row do the same thing. Favorites get their own
+The star beside the app name in the bar saves the app you are looking
+at, without opening the menu. The menu has the same star at the top, and
+stars next to every row do the same thing. Favorites get their own
 section at the top of the menu, so your everyday apps are always one
 click away. Click a filled star again to remove it.
 
@@ -104,16 +105,25 @@ and other private things out of the list. If you really want them:
 python3 _ribbon/ribbon.py --include-untitled
 ```
 
-## Scripts and tools
+## Scripts, tools, and notes
 
 Folders that are not websites still show up. Ribbon makes a project card
-for any folder with a README, a script, or a build file such as
-`package.json`, `pyproject.toml`, `Cargo.toml`, or a `Makefile`.
+for any folder with a script or a build file such as `package.json`,
+`pyproject.toml`, `Cargo.toml`, or a `Makefile`.
 
 The card shows the folder name, the first paragraph of the README, the
 kind of project, its files, and a suggested command to run it. It uses
 the same Git lights as everything else. Nothing is written into the
 folder, and you never have to add an `index.html` just to see it.
+
+Folders with only a Markdown file open as a rendered document instead of
+a card. Ribbon looks for `README.md`, `README.markdown`, `index.md`, or
+any other `.md` file in the folder. Links and pictures inside the
+document keep working, and you can jump back out with the bar.
+
+The app menu shows a small badge for every app: `HTML` for a web page,
+`MD` for Markdown, and codes such as `PY`, `JS`, `RS`, or `SH` for
+project folders. Hover over the badge to see the full type.
 
 ## Check what it found
 
@@ -197,6 +207,19 @@ Two safety notes:
 - A nested app shares its parent's repository. The panel shows the real
   repository folder and branch, so you know what you are saving.
 
+Ribbon checks `.scratch/` folders before it commits or publishes. Hidden
+scratch folders are meant for local notes and browser profiles, so they
+must be listed in `.gitignore`. Ribbon's starter `.gitignore` already
+includes `.scratch/`. If an older repository has one outside `.gitignore`,
+the panel explains how to remove it with `git rm -r --cached` before you
+push.
+
+GitHub Pages only serves what Git publishes. Before turning Pages on,
+Ribbon checks that the repository root has a lowercase `index.html` and
+that Git will actually include that file. A differently named page, an
+ignored file, or an uncommitted `index.html` is reported instead of
+letting the site go live without a home page.
+
 Git actions only work when the ribbon server is running on `127.0.0.1`.
 Use `--no-git-actions` if you want the lights but not the buttons.
 
@@ -211,7 +234,8 @@ Use `--no-git-actions` if you want the lights but not the buttons.
 | The address is already in use | Ribbon tries the next port by itself. It tells you which one it picked. |
 | The Git buttons are greyed out | Start Ribbon on `127.0.0.1` without `--no-git-actions`. Opening the page as a file cannot run Git. |
 | **Create a remote** fails | Run `gh auth login`, and check that the repository name is not already taken. |
-| **Publish with GitHub Pages** fails | Pages needs a public repo on the free plan. Check that the repository root contains an `index.html`. |
+| **Publish with GitHub Pages** fails | Pages needs a public repo on the free plan. The repository root needs a lowercase, committed, unignored `index.html`. |
+| Ribbon says a `.scratch/` folder is tracked | Remove it with `git rm -r --cached .scratch`, add `.scratch/` to `.gitignore`, then commit. |
 | Git says there is nothing to commit | The app was refreshed before the last file change. Close the panel and open it again. |
 | You forgot the commands | Run `python3 _ribbon/ribbon.py --help`. |
 
@@ -233,18 +257,19 @@ python3 _ribbon/ribbon.py --help           # all options, with examples
 
 ## For the very curious
 
-The folder has eight small pieces:
+The folder has nine small pieces:
 
 ```
 _ribbon/
-  index.html  the no-server page: bar + big window
-  boot.js     the tiny check that restores a hidden bar on load
-  shell.js    the bar and window used by the no-server page
-  apps.js     the list that page uses (made by --write-apps)
-  card.js     the project card shown for scripts and tools
-  card.css    the look of that card
-  ribbon.py   finds the apps, serves them, and adds the bar
-  ribbon.js   the bar itself, for the server version
+  index.html    the no-server page: bar + big window
+  boot.js       the tiny check that restores a hidden bar on load
+  shell.js      the bar and window used by the no-server page
+  apps.js       the list that page uses (made by --write-apps)
+  card.js       the project card shown for scripts and tools
+  card.css      the look of that card
+  markdown.css  the look of a rendered Markdown document
+  ribbon.py     finds the apps, serves them, and adds the bar
+  ribbon.js     the bar itself, for the server version
 ```
 
 The server does not change your pages. The bar is added only while a page

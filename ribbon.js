@@ -169,8 +169,15 @@
     .title-wrap {
       display: flex;
       align-items: center;
+      gap: 4px;
       flex: 1 1 auto;
       min-width: 0;
+    }
+
+    .title-star {
+      width: 26px;
+      height: 26px;
+      border-color: transparent;
     }
 
     .title {
@@ -874,6 +881,7 @@
           '<span class="count"></span>' +
         "</div>" +
         '<div class="title-wrap">' +
+          '<button class="star-btn title-star" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>' +
           '<button class="title" type="button" aria-haspopup="dialog" aria-expanded="false" title="Show all apps">' +
             '<span class="title-text"></span>' +
             '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>' +
@@ -1032,7 +1040,9 @@
 
     const menuEl = shadow.querySelector(".menu")
     const menuCurrentTitle = shadow.querySelector(".menu-current-title")
-    const starCurrent = shadow.querySelector(".star-btn")
+    const starTitle = shadow.querySelector(".title-star")
+    const starCurrent = shadow.querySelector(".menu-top .star-btn")
+    const starButtons = [ starTitle, starCurrent ]
     const searchInput = shadow.querySelector(".menu-input")
     const menuFavSection = shadow.querySelector('[data-section="favorites"]')
     const menuAllSection = shadow.querySelector('[data-section="all"]')
@@ -1237,11 +1247,14 @@
       const name = app ? app.title || "this app" : "this app"
       const label = (favorite ? "Remove " : "Add ") +
         name + (favorite ? " from favorites" : " to favorites")
-      starCurrent.disabled = !app
-      starCurrent.setAttribute("aria-pressed", favorite ? "true" : "false")
-      starCurrent.textContent = favorite ? "★" : "☆"
-      starCurrent.title = label
-      starCurrent.setAttribute("aria-label", label)
+      for (let i = 0; i < starButtons.length; i += 1) {
+        const button = starButtons[i]
+        button.disabled = !app
+        button.setAttribute("aria-pressed", favorite ? "true" : "false")
+        button.textContent = favorite ? "★" : "☆"
+        button.title = label
+        button.setAttribute("aria-label", label)
+      }
     }
 
     const LED_WORK = { ok: 0, warn: 1, bad: 2, off: 3 }
@@ -1327,10 +1340,11 @@
 
       const title = document.createElement("span")
       title.className = "menu-app-title"
-      if (app.kind === "project" && app.icon) {
+      if (app.icon) {
         const glyph = document.createElement("span")
         glyph.className = "menu-app-glyph"
         glyph.textContent = app.icon
+        glyph.title = app.type || "Project"
         glyph.setAttribute("aria-hidden", "true")
         if (app.color) glyph.style.color = app.color
         title.appendChild(glyph)
@@ -1534,7 +1548,13 @@
       gitDetail = detail
       gitAction = decideGitAction(detail, focus)
       gitBlocked = false
-      if (gitAction === "pages" && detail.pages && !detail.pages.index) {
+      if (
+        gitAction === "pages" &&
+        detail.pages &&
+        detail.pages.problem &&
+        !detail.pages.index &&
+        !detail.pages.case_mismatch
+      ) {
         gitAction = "pages-entry"
       }
 
@@ -1610,10 +1630,10 @@
       }
 
       const warnings = (detail.warnings || []).filter(function (warning) {
+        if (gitAction !== "init" || detail.has_gitignore) return true
         return !(
-          gitAction === "init" &&
-          !detail.has_gitignore &&
-          warning.indexOf("No .gitignore") === 0
+          warning.indexOf("No .gitignore") === 0 ||
+          warning.indexOf("is not gitignored") >= 0
         )
       })
       gitWarnings.textContent = ""
@@ -1677,7 +1697,11 @@
         )
       }
       if (gitAction === "pages") {
-        notes.push("This enables GitHub Pages for the current branch and sets the Pages address as the repo homepage.")
+        if (detail.pages && detail.pages.problem) {
+          notes.push(detail.pages.problem)
+        } else {
+          notes.push("This enables GitHub Pages for the current branch and sets the Pages address as the repo homepage.")
+        }
       }
       if (detail.state === "detached") notes.push("You are on a detached HEAD. Switch to a branch first.")
       if (detail.state === "conflicted") notes.push("Resolve the merge conflicts, then try again.")
@@ -1698,6 +1722,7 @@
         !canWrite ||
         detail.identity_ok === false && (gitAction === "commit" || gitAction === "init") ||
         (gitAction === "remote" || gitAction === "pages") && detail.gh === false ||
+        gitAction === "pages" && !!(detail.pages && detail.pages.problem) ||
         gitAction === "pages-entry" && !(detail.pages && detail.pages.entry)
       gitPrimary.textContent = labels[gitAction] || ""
       gitPrimary.hidden = !labels[gitAction]
@@ -2012,6 +2037,11 @@
     })
 
     titleButton.addEventListener("click", toggleMenu)
+    starTitle.addEventListener("click", function () {
+      const app = currentApp()
+      if (app) toggleFavorite(app, false)
+      starTitle.focus()
+    })
     starCurrent.addEventListener("click", function () {
       const app = currentApp()
       if (app) toggleFavorite(app, false)

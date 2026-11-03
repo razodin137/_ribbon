@@ -42,40 +42,48 @@
     }).join("") + "</ul>"
   }
 
-  function cardHtml(app) {
+  function typeLabel(app) {
+    if (app.kind === "markdown") return "Markdown document"
     const type = app.type || "Project"
+    return type === "Project" ? "Local project" : type + " project"
+  }
+
+  function cardHtml(app) {
     const icon = app.icon || "PR"
     const color = app.color || "#d0a64a"
     const description = app.description ||
-      "A local project in your ribbon. Open the folder to see what it does."
+      "A local project in your ribbon, shown here because the folder has no web page."
     const run = app.run
-      ? '<section class="rc-block">' +
-          '<h2 class="rc-label">Run</h2>' +
-          '<code class="rc-run">' + esc(app.run) + "</code>" +
-        "</section>"
+      ? '<div class="rc-fact">' +
+          "<dt>Run</dt>" +
+          '<dd><code class="rc-run">' + esc(app.run) + "</code></dd>" +
+        "</div>"
       : ""
 
     return '<article class="rc-card" style="--rc-accent: ' + esc(color) + '">' +
-      '<div class="rc-glow" aria-hidden="true"></div>' +
       '<header class="rc-head">' +
-        '<span class="rc-glyph" aria-hidden="true">' + esc(icon) + "</span>" +
+        '<span class="rc-stamp" aria-hidden="true">' + esc(icon) + "</span>" +
         '<div class="rc-titles">' +
-          '<p class="rc-kicker">' + esc(type) + " project</p>" +
+          '<p class="rc-type">' + esc(typeLabel(app)) + "</p>" +
           '<h1 class="rc-title">' + esc(app.title || "Untitled") + "</h1>" +
         "</div>" +
       "</header>" +
       '<p class="rc-desc">' + esc(description) + "</p>" +
-      '<dl class="rc-meta">' +
-        "<div><dt>Folder</dt><dd>" +
-          esc(folderLabel(app.path || app.dir)) + "</dd></div>" +
-        "<div><dt>Updated</dt><dd>" + esc(dateLabel(app.mtime)) + "</dd></div>" +
+      '<dl class="rc-facts">' +
+        '<div class="rc-fact">' +
+          "<dt>Folder</dt><dd>" + esc(folderLabel(app.path || app.dir)) + "</dd>" +
+        "</div>" +
+        '<div class="rc-fact">' +
+          "<dt>Updated</dt><dd>" + esc(dateLabel(app.mtime)) + "</dd>" +
+        "</div>" +
+        run +
+        '<div class="rc-fact">' +
+          "<dt>Files</dt><dd>" + fileList(app.files) + "</dd>" +
+        "</div>" +
       "</dl>" +
-      run +
-      '<section class="rc-block">' +
-        '<h2 class="rc-label">Files</h2>' +
-        fileList(app.files) +
-      "</section>" +
-      '<footer class="rc-foot">Ribbon · project card</footer>' +
+      '<footer class="rc-foot">' +
+        "No web page in this folder, so Ribbon shows its project card." +
+      "</footer>" +
     "</article>"
   }
 

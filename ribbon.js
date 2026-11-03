@@ -334,6 +334,18 @@
     .menu-row:hover { background: rgba(255, 255, 255, .055); }
     .menu-row.is-current { background: rgba(208, 166, 74, .1); }
 
+    .menu-leds {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 0 0 0 8px;
+      flex: none;
+    }
+    .menu-leds .led { width: 7px; height: 7px; box-shadow: none; }
+    .menu-leds .led.ok { box-shadow: 0 0 5px rgba(101, 209, 138, .45); }
+    .menu-leds .led.warn { box-shadow: 0 0 5px rgba(224, 179, 90, .4); }
+    .menu-leds .led.bad { box-shadow: 0 0 5px rgba(224, 103, 90, .45); }
+
     .menu-app {
       appearance: none;
       -webkit-appearance: none;
@@ -1101,6 +1113,76 @@
       starCurrent.setAttribute("aria-label", label)
     }
 
+    const LED_WORK = { ok: 0, warn: 1, bad: 2, off: 3 }
+
+    function gitLights(git) {
+      const repo = !!(git && git.repo)
+      const state = (git && git.state) || ""
+      const dirty = !!(git && (git.dirty || (git.files && git.files.length)))
+      const count = git && typeof git.dirty_count === "number" ? git.dirty_count : dirty ? 1 : 0
+      const hasRemote = !!(git && git.has_remote)
+      let remoteClass = "off"
+      if (repo && hasRemote) {
+        if (state === "ahead" || state === "diverged" || state === "conflicted") {
+          remoteClass = "bad"
+        } else if (
+          state === "behind" ||
+          state === "no-upstream" ||
+          state === "detached" ||
+          state === "no-commits"
+        ) {
+          remoteClass = "warn"
+        } else {
+          remoteClass = "ok"
+        }
+      }
+      return {
+        repo: repo,
+        dirty: dirty,
+        count: count,
+        hasRemote: hasRemote,
+        repoClass: repo ? "ok" : "off",
+        changesClass: !repo ? "off" : dirty ? "warn" : "ok",
+        remoteClass: remoteClass
+      }
+    }
+
+    // Fewest green lights first, then the worst remaining light. This puts
+    // apps that need the most Git work at the top of the app menu.
+    function gitWorkRank(app) {
+      const lights = gitLights(app && app.git)
+      const classes = [ lights.repoClass, lights.changesClass, lights.remoteClass ]
+      let green = 0
+      let severity = 0
+      for (let i = 0; i < classes.length; i += 1) {
+        if (classes[i] === "ok") green += 1
+        else severity += LED_WORK[classes[i]]
+      }
+      return { green: green, severity: severity }
+    }
+
+    function menuLights(git) {
+      const lights = gitLights(git)
+      const classes = [ lights.repoClass, lights.changesClass, lights.remoteClass ]
+      const wrap = document.createElement("span")
+      wrap.className = "menu-leds"
+      wrap.setAttribute("role", "img")
+      for (let i = 0; i < classes.length; i += 1) {
+        const dot = document.createElement("span")
+        dot.className = "led " + classes[i]
+        dot.setAttribute("aria-hidden", "true")
+        wrap.appendChild(dot)
+      }
+      const label = [
+        repoTip(git),
+        changesTip(git, lights.dirty, lights.count),
+        remoteTip(git, lights.hasRemote)
+      ].join(". ")
+      wrap.setAttribute("aria-label", label)
+      wrap.title = label
+      return wrap
+    }
+
     function favoriteRow(app, appIndex) {
       const favorite = isFavorite(app)
       const row = document.createElement("div")
@@ -1138,6 +1220,7 @@
       )
       star.textContent = favorite ? "★" : "☆"
 
+      row.appendChild(menuLights(app.git))
       row.appendChild(open)
       row.appendChild(star)
       return row
@@ -1156,9 +1239,24 @@
       menuAllList.textContent = ""
       let favoriteCount = 0
       let otherCount = 0
+      const rows = []
 
       apps.forEach(function (app, appIndex) {
         if (!matchesQuery(app, needle)) return
+        rows.push({ app: app, appIndex: appIndex })
+      })
+
+      rows.sort(function (a, b) {
+        const rankA = gitWorkRank(a.app)
+        const rankB = gitWorkRank(b.app)
+        if (rankA.green !== rankB.green) return rankA.green - rankB.green
+        if (rankA.severity !== rankB.severity) return rankB.severity - rankA.severity
+        return a.appIndex - b.appIndex
+      })
+
+      rows.forEach(function (entry) {
+        const app = entry.app
+        const appIndex = entry.appIndex
         if (isFavorite(app)) {
           menuFavList.appendChild(favoriteRow(app, appIndex))
           favoriteCount += 1
@@ -1625,50 +1723,29 @@
     }
 
     function setGit(git) {
-      const repo = !!(git && git.repo)
-      const state = (git && git.state) || ""
-      const dirty = !!(git && (git.dirty || (git.files && git.files.length)))
-      const count = git && typeof git.dirty_count === "number" ? git.dirty_count : dirty ? 1 : 0
-      const hasRemote = !!(git && git.has_remote)
-      const repoClass = repo ? "ok" : "off"
-      const changesClass = !repo ? "off" : dirty ? "warn" : "ok"
-      let remoteClass = "off"
-      if (repo && hasRemote) {
-        if (state === "ahead" || state === "diverged" || state === "conflicted") {
-          remoteClass = "bad"
-        } else if (
-          state === "behind" ||
-          state === "no-upstream" ||
-          state === "detached" ||
-          state === "no-commits"
-        ) {
-          remoteClass = "warn"
-        } else {
-          remoteClass = "ok"
-        }
-      }
+      const lights = gitLights(git)
 
-      ledRepo.className = "led " + repoClass
-      ledChanges.className = "led " + changesClass
-      ledRemote.className = "led " + remoteClass
-      tipRepoDot.className = "led " + repoClass
-      tipChangesDot.className = "led " + changesClass
-      tipRemoteDot.className = "led " + remoteClass
+      ledRepo.className = "led " + lights.repoClass
+      ledChanges.className = "led " + lights.changesClass
+      ledRemote.className = "led " + lights.remoteClass
+      tipRepoDot.className = "led " + lights.repoClass
+      tipChangesDot.className = "led " + lights.changesClass
+      tipRemoteDot.className = "led " + lights.remoteClass
 
       const repoText = repoTip(git)
-      const changesText = changesTip(git, dirty, count)
-      const remoteText = remoteTip(git, hasRemote)
+      const changesText = changesTip(git, lights.dirty, lights.count)
+      const remoteText = remoteTip(git, lights.hasRemote)
       tipRepoText.textContent = repoText
       tipChangesText.textContent = changesText
       tipRemoteText.textContent = remoteText
       ledsWrap.setAttribute("aria-label", repoText + ". " + changesText + ". " + remoteText)
 
-      setLedLabel("repo", repoText, repo ? "Click for Git actions" : "Click to create a repository")
-      setLedLabel("changes", changesText, dirty ? "Click to commit" : "Nothing to commit")
+      setLedLabel("repo", repoText, lights.repo ? "Click for Git actions" : "Click to create a repository")
+      setLedLabel("changes", changesText, lights.dirty ? "Click to commit" : "Nothing to commit")
       setLedLabel(
         "remote",
         remoteText,
-        !hasRemote
+        !lights.hasRemote
           ? "Click to create a remote"
           : git && git.ahead
             ? "Click to push"

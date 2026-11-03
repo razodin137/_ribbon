@@ -58,6 +58,11 @@ Click the app's name in the bar, or press **`/`**, to open the app menu.
 - **Enter** — open the first match.
 - **Escape** — close the menu.
 
+Every row shows the same three Git lights as the bar. The list sorts itself
+so apps that need the most work come first: no repository, then unsaved or
+unpushed changes, then apps that are fully backed up. Hover over a row's
+lights to read its Git status.
+
 ## Favorites
 
 The star at the top of the app menu saves the app you are looking at.
@@ -134,7 +139,8 @@ grown-ups use to save and back up versions of their work.
 | Middle | Green: nothing new to save. Yellow: unsaved changes. | Commit the changes. |
 | Right | Green: backed up. Yellow: not pushed. Red: commits waiting. Dark: no remote. | Push, create a remote, or publish to GitHub Pages. |
 
-Hover over a light to read exactly what is going on.
+Hover over a light to read exactly what is going on. The app menu repeats
+all three lights next to every app, so you can scan the whole list at once.
 
 Clicking a light opens a small panel. It shows the repository folder,
 branch, changed files, and any warnings. Nothing happens until you press

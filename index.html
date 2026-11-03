@@ -388,6 +388,19 @@
   .menu-row:hover { background: rgba(255, 255, 255, .055); }
   .menu-row.is-current { background: rgba(208, 166, 74, .1); }
 
+  .menu-leds {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 0 8px;
+    flex: none;
+  }
+
+  .menu-leds .led { width: 7px; height: 7px; box-shadow: none; }
+  .menu-leds .led.ok { box-shadow: 0 0 5px rgba(101, 209, 138, .45); }
+  .menu-leds .led.warn { box-shadow: 0 0 5px rgba(224, 179, 90, .4); }
+  .menu-leds .led.bad { box-shadow: 0 0 5px rgba(224, 103, 90, .45); }
+
   .menu-app {
     appearance: none;
     -webkit-appearance: none;

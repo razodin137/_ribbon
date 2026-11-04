@@ -1,11 +1,13 @@
 # Ribbon
 
 Ribbon is a little bar at the top of your screen. It lets you jump between
-all the websites you made, without typing long addresses.
+all the project folders you made, without typing long addresses. Each folder
+gets one line: a page opens the page, and everything else opens a card with
+its contents.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ ●●● 04 / 11  Beam Library ▾    ‹ Back  › Next  ⤨ Random  ↻    ✕     │
+│ ●●● 04 / 11  Beam Library ▾    ‹ Back  › Next  ⤨ Drift  ↻    ✕     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -24,13 +26,18 @@ A browser window opens with your first app. That's it!
 Keep the terminal window open while you use Ribbon. When you are done,
 click the terminal and press **Ctrl+C** to stop it.
 
-Ribbon is good at finding your apps. It looks in the folder that contains
-`_ribbon`. If there are no apps there, it looks one folder up.
+Ribbon lists **directories, one line per directory**. It looks in the folder
+that contains `_ribbon`. If `_ribbon` sits beside a single folder of projects
+(the way `Work/tries` works), it lists that folder's children instead.
 If it guesses wrong, you can tell it where to look:
 
 ```bash
 python3 _ribbon/ribbon.py --root ~/my-websites
 ```
+
+It does not list the files inside those folders. A folder with an HTML page
+opens that page; every other folder opens a contents card. A folder with only
+a Markdown file opens the document instead.
 
 ## What the buttons do
 
@@ -39,13 +46,29 @@ python3 _ribbon/ribbon.py --root ~/my-websites
 | `Beam Library ▾` | Open the app menu: search and jump to any app | `/` |
 | `‹ Back` | Go to the app before this one | `[` |
 | `› Next` | Go to the app after this one | `]` |
-| `⤨ Random` | Surprise me — jump to any app | `R` |
+| `⤨ Drift` | Deal the next project from a no-repeat deck | `R` |
 | `↻` | Reload the app you are looking at | `Shift+R` |
 | `✕` | Hide the bar | `H` |
 
 Back and Next wrap around. When you hide the bar, a tiny **RIBBON** tab
 appears in the top right corner. Click it — or press **H** — to bring the
 bar back.
+
+Drift is not a coin flip. It shuffles the whole list once, weights projects
+that need work or have been ignored, and deals them without repeats until the
+deck is empty. The deck is remembered for the browser tab, so `R` keeps
+moving forward instead of landing on the same project twice.
+
+The app menu also has **Keep** and **Park**:
+
+- **Keep** marks a project as worth finishing. Kept projects come up more
+  often in Drift.
+- **Park** puts a project away for 14 days. Parked projects are left out of
+  the deck until the snooze ends.
+
+Press **K** or **P** to do the same thing without opening the menu. Both
+choices are stored next to your other Ribbon data, never inside the project
+folder.
 
 The bar also hides itself when you scroll down, and comes back when you
 scroll up. At the very top of the page it sits in its own strip, so the
@@ -65,6 +88,43 @@ Every row shows the same three Git lights as the bar. The list sorts itself
 so apps that need the most work come first: no repository, then unsaved or
 unpushed changes, then apps that are fully backed up. Hover over a row's
 lights to read its Git status.
+
+## Channels
+
+The chips above the search box narrow both the menu and Drift. They are made
+from what Ribbon already knows, so there is nothing to configure:
+
+- **All** — the whole portfolio.
+- **Needs push** — a remote is set, but commits are waiting.
+- **Uncommitted** — the repository has unsaved changes.
+- **No repo** — Git has not been started.
+- **Dusty** — not opened in 30 days, or never opened.
+- **Shipped** — clean and pushed.
+- **HTML**, **Python**, **Markdown**, and the other types — one chip per kind
+  of project in the folder.
+
+Pick a channel, then press **R**. Drift deals only from that channel. The
+number beside each chip is how many projects are in it.
+
+## The state file
+
+Ribbon keeps opens, last-opened times, Keep/Park choices, and notes in one
+small JSON file outside your project folders:
+
+```
+~/.local/state/ribbon/state-<hash>.json
+```
+
+The hash comes from the apps folder, so two different portfolios keep
+separate state. If `XDG_STATE_HOME` is set, Ribbon uses it instead of
+`~/.local/state`.
+
+The file is created on first use and updated when you open a project or press
+Keep or Park. Deleting it resets Drift. Nothing is written into your apps.
+
+State works even with `--no-git-actions`: the git buttons are read-only, but
+Drift still remembers what you opened. The no-server page cannot write the
+state file; it still shuffles, but it forgets between visits.
 
 ## Favorites
 
@@ -98,22 +158,45 @@ offers to create an `index.html` that opens it. Your page keeps its name.
 
 If Ribbon is already running, just refresh. It finds new folders by itself.
 
-Pages without a `<title>` are skipped on purpose. That keeps login pages
-and other private things out of the list. If you really want them:
+Pages without a `<title>` are not opened on purpose. That keeps login pages
+and other private things out of the list. Ribbon still shows the folder, but
+as a contents card instead of the page. If you really want the page itself:
 
 ```bash
 python3 _ribbon/ribbon.py --include-untitled
 ```
 
-## Scripts, tools, and notes
+## Delete a folder
 
-Folders that are not websites still show up. Ribbon makes a project card
-for any folder with a script or a build file such as `package.json`,
-`pyproject.toml`, `Cargo.toml`, or a `Makefile`.
+Every row in the app menu ends in a small **✕**. Click it to remove that
+folder from disk. Ribbon asks first and shows the exact command it will run,
+with the full path:
 
-The card shows the folder name, the first paragraph of the README, the
-kind of project, its files, and a suggested command to run it. It uses
-the same Git lights as everything else. Nothing is written into the
+```bash
+rm -rf -- '/home/you/apps/2026-10-30-my-old-app'
+```
+
+Nothing happens until you press **Delete folder**. Ribbon only deletes a
+direct child of the apps folder, and refuses to delete itself, a symlink, or
+anything outside that folder. The row disappears from the menu afterward, and
+its Keep/Park/note state is removed too.
+
+Deleting is a server action, like the Git buttons. The **✕** is hidden when
+Ribbon is read-only (`--no-git-actions`) or when you open the static
+`index.html` page.
+
+## Scripts, tools, and folders
+
+Every folder directly inside your apps folder shows up, even if it has no
+page. Ribbon labels folders with a script or build file such as
+`package.json`, `pyproject.toml`, `Cargo.toml`, or a `Makefile`, then gives
+everything else a plain **Folder** card.
+
+Every card shows the folder name, the first paragraph of the README when
+there is one, the kind of project, and a suggested command to run it. It
+also shows a contents strip: how many files and folders there are, a color
+bar of the file types, and the most recently touched items as small tiles.
+It uses the same Git lights as everything else. Nothing is written into the
 folder, and you never have to add an `index.html` just to see it.
 
 Folders with only a Markdown file open as a rendered document instead of
@@ -121,11 +204,12 @@ a card. Ribbon looks for `README.md`, `README.markdown`, `index.md`, or
 any other `.md` file in the folder. Links and pictures inside the
 document keep working, and you can jump back out with the bar.
 
-The app menu shows a small badge for every app: `HTML` for a web page,
+The app menu shows a small badge for every folder: `HTML` for a web page,
 `MD` for Markdown, and codes such as `PY`, `JS`, `RS`, or `SH` for
-project folders. Badges are color-coded by type — orange for HTML, green
-for Python, grey for shell scripts, and so on — so the same kind of
-project always looks the same. Hover over the badge to see the full type.
+project folders. Plain folders get `DIR`. Badges are color-coded by type —
+orange for HTML, green for Python, grey for shell scripts, and so on — so
+the same kind of project always looks the same. Hover over the badge to see
+the full type.
 
 ## Check what it found
 
@@ -135,8 +219,8 @@ Want to see the list without opening a browser? Run:
 python3 _ribbon/ribbon.py --list
 ```
 
-It prints every app it can see, with its folder and whether it is backed
-up. To start on a certain app, add its number:
+It prints every folder it can see, with its path and whether it is backed
+up. To start on a certain folder, add its number:
 
 ```bash
 python3 _ribbon/ribbon.py --app 3
@@ -159,9 +243,10 @@ Then open `_ribbon/index.html`.
 
 One catch: when you open the file directly, some things are turned off by
 the browser — the keyboard shortcuts and the scroll-to-hide. Some browsers
-also keep favorites in a separate place, or forget them altogether. If you
-want everything to work the same way every time, use the server version at
-the top of this page.
+also keep favorites in a separate place, or forget them altogether. The
+no-server page still has the old **Random** button: Drift, channels, and
+Keep/Park need the server. If you want everything to work the same way every
+time, use the server version at the top of this page.
 
 ## The three little lights
 
@@ -229,14 +314,18 @@ Use `--no-git-actions` if you want the lights but not the buttons.
 
 | Problem | Try this |
 | --- | --- |
-| It says **No apps found** | Your pages may have no `<title>`. Try `--include-untitled`, or point it at the right folder with `--root`. |
+| It says **No folders found** | Your pages may have no `<title>`. Try `--include-untitled`, or point it at the right folder with `--root`. |
 | The bar disappeared | Press **H**, or click the little **RIBBON** tab in the top right. |
 | The keyboard shortcuts do nothing | Use the server version. Browsers turn them off when you open the file directly. |
-| It shows the wrong folder | Add `--root ~/the/folder/you/want`. |
+| It shows the wrong folder | Add `--root ~/the/folder/you/want`. Ribbon lists the folders directly inside it. |
 | The address is already in use | Ribbon tries the next port by itself. It tells you which one it picked. |
 | The Git buttons are greyed out | Start Ribbon on `127.0.0.1` without `--no-git-actions`. Opening the page as a file cannot run Git. |
 | **Create a remote** fails | Run `gh auth login`, and check that the repository name is not already taken. |
 | **Publish with GitHub Pages** fails | Pages needs a public repo on the free plan. The repository root needs a lowercase, committed, unignored `index.html`. |
+| Drift keeps skipping a project | It is **Parked**, or it is not in the active channel. Choose **All**, then press **P** to unpark it. |
+| Drift repeats a project | Close the tab to clear the deck, or pick another channel. The deck is remembered per tab. |
+| Keep/Park do nothing | Use the server version on `127.0.0.1`. The no-server page cannot save state. |
+| You want to reset Drift | Delete `~/.local/state/ribbon/state-<hash>.json`. |
 | Ribbon says a `.scratch/` folder is tracked | Remove it with `git rm -r --cached .scratch`, add `.scratch/` to `.gitignore`, then commit. |
 | Git says there is nothing to commit | The app was refreshed before the last file change. Close the panel and open it again. |
 | You forgot the commands | Run `python3 _ribbon/ribbon.py --help`. |
@@ -246,7 +335,7 @@ Use `--no-git-actions` if you want the lights but not the buttons.
 ```bash
 python3 _ribbon/ribbon.py                  # start and open the first app
 python3 _ribbon/ribbon.py --list           # show the apps and quit
-python3 _ribbon/ribbon.py --app 3          # start on app number 3
+python3 _ribbon/ribbon.py --app 3          # start on folder number 3
 python3 _ribbon/ribbon.py --root ~/sites   # use a different folder
 python3 _ribbon/ribbon.py --port 9000      # use a different port
 python3 _ribbon/ribbon.py --no-open        # don't open a browser
@@ -259,7 +348,7 @@ python3 _ribbon/ribbon.py --help           # all options, with examples
 
 ## For the very curious
 
-The folder has nine small pieces:
+The folder has ten small pieces:
 
 ```
 _ribbon/
@@ -270,13 +359,15 @@ _ribbon/
   card.js       the project card shown for scripts and tools
   card.css      the look of that card
   markdown.css  the look of a rendered Markdown document
-  ribbon.py     finds the apps, serves them, and adds the bar
+  ribbon.py     finds the apps, serves them, and saves state
   ribbon.js     the bar itself, for the server version
+  BRIEF.md      the design notes behind Drift, channels, and the Shelf
 ```
 
 The server does not change your pages. The bar is added only while a page
 is being sent to your browser. Git actions do change the repository, but
-only after you press a button and confirm what will be included.
+only after you press a button and confirm what will be included. Drift state
+is written to the state file described above, never into an app folder.
 
 ### Checking the code
 

@@ -20,6 +20,8 @@
     } catch (_) { /* keep the default base */ }
   }
   const CACHE_KEY = "ribbon:apps:" + scriptBase
+  const DECK_KEY = "ribbon:deck:" + scriptBase
+  const CHANNEL_KEY = "ribbon:channel:" + scriptBase
 
   const STORAGE_KEY = "ribbon:hidden"
   const BAR_HEIGHT = 40
@@ -264,6 +266,104 @@
       font-weight: 600;
       color: #f4f0e6;
     }
+    .menu-current-meta {
+      display: block;
+      margin-top: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9.5px;
+      color: #8f8a7c;
+    }
+
+    .menu-current-tools {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 12px 9px;
+    }
+    .menu-current-hint {
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 8.5px;
+      letter-spacing: .04em;
+      color: #6f6b60;
+    }
+    .tool-btn {
+      appearance: none;
+      -webkit-appearance: none;
+      height: 24px;
+      padding: 0 9px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 5px;
+      background: transparent;
+      color: #a9a496;
+      font: inherit;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 10px;
+      letter-spacing: .04em;
+      cursor: pointer;
+      flex: none;
+    }
+    .tool-btn:hover { background: rgba(255, 255, 255, .07); color: #e9e4d6; }
+    .tool-btn[aria-pressed="true"] {
+      border-color: rgba(241, 209, 138, .4);
+      background: rgba(241, 209, 138, .08);
+      color: #f1d18a;
+    }
+    .tool-btn:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
+    .tool-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+
+    .menu-channels {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 0 12px 9px;
+    }
+    .chip {
+      appearance: none;
+      -webkit-appearance: none;
+      height: 23px;
+      padding: 0 8px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 999px;
+      background: transparent;
+      color: #a9a496;
+      font: inherit;
+      font-size: 10.5px;
+      cursor: pointer;
+    }
+    .chip:hover { background: rgba(255, 255, 255, .07); color: #e9e4d6; }
+    .chip[aria-pressed="true"] {
+      border-color: rgba(208, 166, 74, .45);
+      background: rgba(208, 166, 74, .12);
+      color: #f1d18a;
+    }
+    .chip:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
+    .chip-count {
+      margin-left: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      color: #7f7b6e;
+    }
+    .chip[aria-pressed="true"] .chip-count { color: #c9a95e; }
+
+    .menu-app-flag {
+      margin-left: 6px;
+      padding: 0 4px;
+      border: 1px solid currentcolor;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 8px;
+      letter-spacing: .05em;
+      color: #c9a95e;
+      vertical-align: 1px;
+    }
 
     .star-btn {
       appearance: none;
@@ -433,6 +533,139 @@
     .row-star:hover { background: rgba(255, 255, 255, .08); color: #f1d18a; }
     .row-star[aria-pressed="true"] { color: #f1d18a; }
     .row-star:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
+
+    .row-delete {
+      appearance: none;
+      -webkit-appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      margin: 0 2px 0 0;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #6f6b60;
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      flex: none;
+    }
+    .row-delete:hover { background: rgba(224, 103, 90, .16); color: #f0a79d; }
+    .row-delete:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
+
+    .delete-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 110;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(8, 9, 7, .62);
+      -webkit-backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px);
+      pointer-events: auto;
+    }
+    .delete-overlay[hidden] { display: none; }
+
+    .delete-dialog {
+      width: min(500px, 100%);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 12px;
+      background: #1b1d18;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+      color: #e9e4d6;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .delete-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px 11px;
+      border-bottom: 1px solid rgba(255, 255, 255, .1);
+    }
+    .delete-heading { flex: 1 1 auto; min-width: 0; }
+    .delete-kicker {
+      margin-bottom: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #e0675a;
+    }
+    .delete-title { font-size: 15px; font-weight: 600; color: #f4f0e6; }
+
+    .delete-body {
+      display: grid;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+    .delete-warn { margin: 0; }
+    .delete-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      color: #979284;
+      word-break: break-all;
+    }
+    .delete-command-label {
+      margin-bottom: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #979284;
+    }
+    .delete-command {
+      margin: 0;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 8px;
+      background: #11130f;
+      color: #f0c7bf;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 11.5px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .delete-note { color: #979284; font-size: 11.5px; }
+
+    .delete-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 16px;
+      border-top: 1px solid rgba(255, 255, 255, .1);
+    }
+    .delete-status {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #979284;
+      font-size: 11px;
+    }
+    .delete-status.is-bad { color: #e0897e; }
+    .btn.delete-primary {
+      border-color: rgba(224, 103, 90, .55);
+      background: #c95548;
+      color: #fff;
+      font-weight: 600;
+    }
+    .btn.delete-primary:hover { background: #d96456; color: #fff; }
+    .btn.delete-primary:disabled { opacity: .5; cursor: default; }
 
     .menu-empty {
       padding: 18px 12px;
@@ -802,9 +1035,16 @@
       .then(function (data) {
         const apps = Array.isArray(data) ? data : data && data.apps
         if (!Array.isArray(apps) || !apps.length) return
+        const meta = Array.isArray(data)
+          ? null
+          : {
+            state: data.state,
+            token: data.token,
+            write: data.write
+          }
         writeCachedApps(apps)
-        if (update) update(apps)
-        else update = mount(apps) || null
+        if (update) update(apps, meta)
+        else update = mount(apps, meta) || null
       })
       .catch(function () {
         /* No manifest (for example, opened from file://): stay quiet. */
@@ -827,7 +1067,8 @@
     } catch (_) { /* storage may be unavailable */ }
   }
 
-  function mount(rawApps) {
+  function mount(rawApps, meta) {
+    meta = meta || {}
     let apps = rawApps.filter(function (app) {
       return app && typeof app.url === "string" && app.url
     })
@@ -896,9 +1137,9 @@
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>' +
             '<span class="label">Next</span>' +
           "</button>" +
-          '<button class="btn" type="button" data-act="random" aria-label="Random app" title="Random app — R">' +
+          '<button class="btn" type="button" data-act="drift" aria-label="Drift to another app" title="Drift to another app — R">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 4l3 3-3 3"/><path d="M18 20l3-3-3-3"/><path d="M3 7h3c2 0 3.5 1 4.5 2.5l3 5C14.5 16 16 17 18 17h3"/><path d="M3 17h3c2 0 3.5-1 4.5-2.5l3-5C14.5 8 16 7 18 7h3"/></svg>' +
-            '<span class="label">Random</span>' +
+            '<span class="label">Drift</span>' +
           "</button>" +
           '<button class="btn" type="button" data-act="reload" aria-label="Reload app" title="Reload app — Shift+R">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>' +
@@ -913,9 +1154,16 @@
             '<div class="menu-current">' +
               '<span class="menu-current-label">Current app</span>' +
               '<span class="menu-current-title"></span>' +
+              '<span class="menu-current-meta"></span>' +
             "</div>" +
             '<button class="star-btn" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>' +
           "</div>" +
+          '<div class="menu-current-tools">' +
+            '<button class="tool-btn" type="button" data-tool="keep" aria-pressed="false">Keep</button>' +
+            '<button class="tool-btn" type="button" data-tool="park" aria-pressed="false">Park</button>' +
+            '<span class="menu-current-hint">drift deals from the active channel</span>' +
+          "</div>" +
+          '<div class="menu-channels" role="group" aria-label="Channels"></div>' +
           '<div class="menu-search">' +
             '<input class="menu-input" type="search" placeholder="Search apps…" aria-label="Search apps" autocomplete="off" spellcheck="false">' +
           "</div>" +
@@ -989,6 +1237,32 @@
             '<button class="btn git-primary" type="button" hidden></button>' +
           "</div>" +
         "</div>" +
+      "</div>" +
+      '<div class="delete-overlay" hidden>' +
+        '<div class="delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-warning">' +
+          '<div class="delete-head">' +
+            '<div class="delete-heading">' +
+              '<div class="delete-kicker">Delete folder</div>' +
+              '<div class="delete-title" id="delete-title"></div>' +
+            "</div>" +
+            '<button class="git-close delete-close" type="button" aria-label="Close">✕</button>' +
+          "</div>" +
+          '<div class="delete-body">' +
+            '<p class="delete-warn" id="delete-warning">This removes the folder and everything inside it. It cannot be undone.</p>' +
+            '<div class="delete-path"></div>' +
+            "<div>" +
+              '<div class="delete-command-label">Command</div>' +
+              '<pre class="delete-command"></pre>' +
+            "</div>" +
+            '<div class="delete-note">Ribbon will run exactly this command, then remove the folder from the list.</div>' +
+            '<pre class="delete-command delete-output" hidden></pre>' +
+          "</div>" +
+          '<div class="delete-actions">' +
+            '<span class="delete-status" role="status" aria-live="polite"></span>' +
+            '<button class="btn delete-cancel" type="button">Cancel</button>' +
+            '<button class="btn delete-primary" type="button" disabled>Delete folder</button>' +
+          "</div>" +
+        "</div>" +
       "</div>"
 
     const bar = shadow.querySelector(".bar")
@@ -1038,8 +1312,26 @@
     const gitPrimary = shadow.querySelector(".git-primary")
     const gitClose = shadow.querySelector(".git-close")
 
+    const deleteOverlay = shadow.querySelector(".delete-overlay")
+    const deleteTitle = shadow.querySelector(".delete-title")
+    const deletePath = shadow.querySelector(".delete-path")
+    const deleteCommand = shadow.querySelector(".delete-command")
+    const deleteOutput = shadow.querySelector(".delete-output")
+    const deleteStatus = shadow.querySelector(".delete-status")
+    const deleteCancel = shadow.querySelector(".delete-cancel")
+    const deleteClose = shadow.querySelector(".delete-close")
+    const deletePrimary = shadow.querySelector(".delete-primary")
+    let deleteTarget = null
+    let deleteBusy = false
+    let deleteReady = false
+    let deleteRequest = 0
+
     const menuEl = shadow.querySelector(".menu")
     const menuCurrentTitle = shadow.querySelector(".menu-current-title")
+    const menuCurrentMeta = shadow.querySelector(".menu-current-meta")
+    const menuChannels = shadow.querySelector(".menu-channels")
+    const keepButton = shadow.querySelector('[data-tool="keep"]')
+    const parkButton = shadow.querySelector('[data-tool="park"]')
     const starTitle = shadow.querySelector(".title-star")
     const starCurrent = shadow.querySelector(".menu-top .star-btn")
     const starButtons = [ starTitle, starCurrent ]
@@ -1083,6 +1375,25 @@
     }
 
     const favorites = readFavorites()
+    const signals = meta.state && meta.state.assets ? meta.state.assets : {}
+    let ribbonToken = meta.token || gitToken
+    let canDelete = !!(meta.write && ribbonToken)
+    let activeChannel = readChannel()
+    let deckChannel = activeChannel
+    let deck = []
+    let deckCursor = 0
+    let openedRecorded = false
+    let appIndex = {}
+    const storedDeck = readDeck()
+    if (storedDeck && storedDeck.channel === activeChannel) {
+      const known = {}
+      for (let i = 0; i < apps.length; i += 1) known[appKey(apps[i])] = true
+      deck = (storedDeck.order || []).filter(function (key) {
+        return known[key]
+      })
+      deckCursor = Number(storedDeck.cursor) || 0
+      if (deckCursor >= deck.length) deckCursor = 0
+    }
     let menuOpen = false
     let gitDetail = null
     let gitAction = null
@@ -1093,6 +1404,10 @@
     function applyApps() {
       const current = locate()
       index = current.index
+      appIndex = {}
+      for (let i = 0; i < apps.length; i += 1) {
+        appIndex[appKey(apps[i])] = apps[i]
+      }
       titleText.textContent = current.title
       titleButton.title = "Show all apps"
       menuCurrentTitle.textContent = current.title
@@ -1100,11 +1415,15 @@
         " / " + pad(apps.length, apps.length)
       setGit(apps[index] && apps[index].git)
       updateCurrentStar()
+      updateCurrentMeta()
       for (let k = 0; k < buttons.length; k += 1) {
         const act = buttons[k].getAttribute("data-act")
         if (act !== "hide") buttons[k].disabled = apps.length < 2
       }
-      if (menuOpen) renderMenu(searchInput.value)
+      if (menuOpen) {
+        renderChannels()
+        renderMenu(searchInput.value)
+      }
       if (window.__ribbon) window.__ribbon.apps = apps
     }
 
@@ -1198,12 +1517,176 @@
       location.assign(apps[target].url)
     }
 
-    function random() {
+    function drift() {
       if (apps.length < 2) return
-      const choices = apps.length - (index >= 0 ? 1 : 0)
-      let pick = Math.floor(Math.random() * choices)
-      if (index >= 0 && pick >= index) pick += 1
-      location.assign(apps[pick].url)
+      if (!ensureDeck()) return
+      const current = appKey(currentApp())
+      let key = deck[deckCursor]
+      let guard = 0
+      while (key === current && guard < deck.length) {
+        deckCursor += 1
+        if (deckCursor >= deck.length) deckCursor = 0
+        key = deck[deckCursor]
+        guard += 1
+      }
+      if (key === current) return
+      deckCursor += 1
+      if (deckCursor >= deck.length) {
+        deck = buildDeck(activeChannel)
+        deckChannel = activeChannel
+        deckCursor = 0
+      }
+      saveDeck()
+      const app = appByKey(key)
+      if (app) location.assign(app.url)
+    }
+
+    function ensureDeck() {
+      if (!deck.length || deckChannel !== activeChannel) {
+        deck = buildDeck(activeChannel)
+        deckChannel = activeChannel
+        deckCursor = 0
+        saveDeck()
+      }
+      return deck.length > 0
+    }
+
+    function buildDeck(channel) {
+      const rng = seededRandom((Date.now() ^ (Math.random() * 4294967296)) >>> 0)
+      const items = []
+      for (let i = 0; i < apps.length; i += 1) {
+        if (!channelMatches(apps[i], channel)) continue
+        const weight = driftWeight(apps[i], rng)
+        if (weight > 0) {
+          items.push({ key: appKey(apps[i]), weight: weight })
+        }
+      }
+      const order = []
+      while (items.length) {
+        let total = 0
+        for (let i = 0; i < items.length; i += 1) total += items[i].weight
+        let pick = rng() * total
+        let at = 0
+        for (; at < items.length; at += 1) {
+          pick -= items[at].weight
+          if (pick <= 0) break
+        }
+        if (at >= items.length) at = items.length - 1
+        order.push(items[at].key)
+        items.splice(at, 1)
+      }
+      return order
+    }
+
+    function seededRandom(seed) {
+      let value = seed >>> 0
+      return function () {
+        value += 0x6d2b79f5
+        let t = value
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+      }
+    }
+
+    function driftWeight(app, rng) {
+      const key = appKey(app)
+      const entry = signals[key] || {}
+      if (isParked(entry)) return 0
+      const git = app.git || {}
+      const state = git.state || ""
+      let weight = 1
+      if (!git.repo) weight += 2.4
+      else if (state === "conflicted") weight += 2.6
+      else if (state === "dirty") weight += 2
+      else if (state === "ahead" || state === "diverged") weight += 2.2
+      else if (state === "no-upstream" || state === "no-commits") weight += 1.6
+      else if (state === "clean") weight += 0.2
+      if (entry.keep) weight += 2.2
+      if (favorites.has(key)) weight += 1.2
+      const openedAt = entry.last_opened ? Date.parse(entry.last_opened) : 0
+      const touched = Math.max((Number(app.mtime) || 0) * 1000, openedAt || 0)
+      const days = touched ? Math.max(0, (Date.now() - touched) / 86400000) : 365
+      weight += Math.min(days / 45, 2.5)
+      if (!entry.last_opened) weight += 1.2
+      if (entry.opens) weight -= Math.min(entry.opens * 0.08, 0.8)
+      weight += rng() * 0.5
+      return Math.max(0.15, weight)
+    }
+
+    function channelMatches(app, channel) {
+      if (!channel || channel === "all") return true
+      const git = app.git || {}
+      const state = git.state || ""
+      if (channel === "needs-push") {
+        return !!git.repo && (
+          Number(git.ahead) > 0 ||
+          state === "diverged" ||
+          (!!git.has_remote && state === "no-upstream")
+        )
+      }
+      if (channel === "dirty") return !!git.repo && !!git.dirty
+      if (channel === "no-repo") return !git.repo
+      if (channel === "shipped") return state === "clean" && !!git.has_remote
+      if (channel === "dusty") return isDusty(app)
+      if (channel.indexOf("type:") === 0) {
+        return String(app.type || "").toLowerCase() === channel.slice(5)
+      }
+      return true
+    }
+
+    function channelLabel(channel) {
+      if (channel === "all") return "All apps"
+      if (channel === "needs-push") return "Needs push"
+      if (channel === "dirty") return "Uncommitted"
+      if (channel === "no-repo") return "No repo"
+      if (channel === "shipped") return "Shipped"
+      if (channel === "dusty") return "Dusty"
+      if (channel.indexOf("type:") === 0) {
+        const wanted = channel.slice(5)
+        for (let i = 0; i < apps.length; i += 1) {
+          if (String(apps[i].type || "").toLowerCase() === wanted) {
+            return apps[i].type
+          }
+        }
+        return wanted
+      }
+      return channel
+    }
+
+    function isDusty(app) {
+      const entry = signals[appKey(app)] || {}
+      if (!entry.last_opened) return true
+      const opened = Date.parse(entry.last_opened)
+      return !opened || Date.now() - opened > 30 * 86400000
+    }
+
+    function isParked(entry) {
+      return !!(
+        entry &&
+        entry.parked_until &&
+        Date.parse(entry.parked_until) > Date.now()
+      )
+    }
+
+    function appByKey(key) {
+      return appIndex[key] || null
+    }
+
+    function saveDeck() {
+      try {
+        sessionStorage.setItem(DECK_KEY, JSON.stringify({
+          channel: deckChannel,
+          order: deck,
+          cursor: deckCursor
+        }))
+      } catch (_) { /* storage may be unavailable */ }
+    }
+
+    function saveChannel() {
+      try {
+        sessionStorage.setItem(CHANNEL_KEY, activeChannel)
+      } catch (_) { /* storage may be unavailable */ }
     }
 
     function reloadApp() {
@@ -1255,6 +1738,115 @@
         button.title = label
         button.setAttribute("aria-label", label)
       }
+    }
+
+    function updateCurrentMeta() {
+      const app = currentApp()
+      const entry = app ? signals[appKey(app)] || {} : {}
+      const bits = []
+      if (app) {
+        if (entry.last_opened) {
+          bits.push("opened " + relativeTime(entry.last_opened))
+        } else {
+          bits.push("never opened")
+        }
+        if (app.mtime) bits.push("touched " + relativeTime(app.mtime * 1000))
+        if (entry.opens) {
+          bits.push(entry.opens + (entry.opens === 1 ? " open" : " opens"))
+        }
+        if (entry.keep) bits.push("kept")
+        if (isParked(entry)) bits.push("parked")
+      }
+      menuCurrentMeta.textContent = bits.join(" · ")
+      const keep = !!entry.keep
+      const park = isParked(entry)
+      keepButton.disabled = !app
+      parkButton.disabled = !app
+      keepButton.setAttribute("aria-pressed", keep ? "true" : "false")
+      parkButton.setAttribute("aria-pressed", park ? "true" : "false")
+      keepButton.textContent = keep ? "Kept" : "Keep"
+      parkButton.textContent = park ? "Parked" : "Park"
+    }
+
+    function relativeTime(value) {
+      const at = typeof value === "number" ? value : Date.parse(value)
+      if (!at) return "never"
+      const minutes = Math.round((Date.now() - at) / 60000)
+      if (minutes < 1) return "just now"
+      if (minutes < 60) return minutes + "m ago"
+      const hours = Math.round(minutes / 60)
+      if (hours < 24) return hours + "h ago"
+      const days = Math.round(hours / 24)
+      if (days < 30) return days + "d ago"
+      return Math.round(days / 30) + "mo ago"
+    }
+
+    function mergeSignals(incoming) {
+      if (!incoming) return
+      Object.keys(incoming).forEach(function (key) {
+        const mine = signals[key]
+        const theirs = incoming[key]
+        if (!mine) {
+          signals[key] = theirs
+          return
+        }
+        const mineAt = Date.parse(mine.updated || "") || 0
+        const theirAt = Date.parse(theirs.updated || "") || 0
+        if (theirAt >= mineAt) signals[key] = theirs
+      })
+    }
+
+    function signal(name, value) {
+      const app = currentApp()
+      if (!app) return
+      const key = appKey(app)
+      const entry = Object.assign({}, signals[key] || {})
+      const now = new Date()
+      if (name === "open") {
+        entry.opens = (Number(entry.opens) || 0) + 1
+        entry.last_opened = now.toISOString()
+      } else if (name === "keep") {
+        entry.keep = !!value
+        if (entry.keep) entry.parked_until = null
+      } else if (name === "park") {
+        entry.parked_until = value
+          ? new Date(now.getTime() + 14 * 86400000).toISOString()
+          : null
+      } else if (name === "note") {
+        if (value) entry.note = String(value).slice(0, 500)
+        else delete entry.note
+      }
+      entry.updated = now.toISOString()
+      signals[key] = entry
+      if (name === "keep" || name === "park") deck = []
+      updateCurrentMeta()
+      if (menuOpen) {
+        renderChannels()
+        renderMenu(searchInput.value)
+      }
+      if (!ribbonToken) return
+      fetch(new URL("signal", scriptBase).href, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ribbon-Token": ribbonToken
+        },
+        body: JSON.stringify({ path: key, signal: name, value: value })
+      })
+        .then(function (response) {
+          return response.json()
+        })
+        .then(function (data) {
+          if (!data || !data.ok || !data.state || !data.state.assets) return
+          mergeSignals(data.state.assets)
+          if (name === "keep" || name === "park") deck = []
+          updateCurrentMeta()
+          if (menuOpen) {
+            renderChannels()
+            renderMenu(searchInput.value)
+          }
+        })
+        .catch(function () { /* the local signal stands */ })
     }
 
     const LED_WORK = { ok: 0, warn: 1, bad: 2, off: 3 }
@@ -1350,6 +1942,13 @@
         title.appendChild(glyph)
       }
       title.appendChild(document.createTextNode(app.title || "Untitled"))
+      const entry = signals[appKey(app)] || {}
+      if (entry.keep || isParked(entry)) {
+        const flag = document.createElement("span")
+        flag.className = "menu-app-flag"
+        flag.textContent = isParked(entry) ? "parked" : "kept"
+        title.appendChild(flag)
+      }
 
       const path = app.path || app.dir || ""
       const dir = document.createElement("span")
@@ -1376,6 +1975,20 @@
       row.appendChild(menuLights(app.git))
       row.appendChild(open)
       row.appendChild(star)
+      if (canDelete) {
+        const remove = document.createElement("button")
+        remove.type = "button"
+        remove.className = "row-delete"
+        remove.setAttribute("data-delete", appKey(app))
+        remove.setAttribute("aria-haspopup", "dialog")
+        remove.title = "Delete this folder…"
+        remove.setAttribute(
+          "aria-label",
+          "Delete " + (app.title || appKey(app)) + " folder"
+        )
+        remove.textContent = "✕"
+        row.appendChild(remove)
+      }
       return row
     }
 
@@ -1387,6 +2000,68 @@
       return haystack.indexOf(query) !== -1
     }
 
+    function buildChannels() {
+      const list = [ { id: "all", label: "All", count: apps.length } ]
+      const add = function (id, label) {
+        let count = 0
+        for (let i = 0; i < apps.length; i += 1) {
+          if (channelMatches(apps[i], id)) count += 1
+        }
+        if (count) {
+          list.push({
+            id: id,
+            label: label || channelLabel(id),
+            count: count
+          })
+        }
+      }
+      add("needs-push")
+      add("dirty")
+      add("no-repo")
+      add("dusty")
+      add("shipped")
+      const types = []
+      for (let i = 0; i < apps.length; i += 1) {
+        const type = String(apps[i].type || "").trim()
+        if (type && types.indexOf(type) === -1) types.push(type)
+      }
+      types.sort(function (a, b) { return a.localeCompare(b) })
+      for (let i = 0; i < types.length; i += 1) {
+        add("type:" + types[i].toLowerCase(), types[i])
+      }
+      return list
+    }
+
+    function renderChannels() {
+      const list = buildChannels()
+      let active = false
+      for (let i = 0; i < list.length; i += 1) {
+        if (list[i].id === activeChannel) active = true
+      }
+      if (!active) {
+        activeChannel = "all"
+        saveChannel()
+      }
+      menuChannels.textContent = ""
+      list.forEach(function (channel) {
+        const chip = document.createElement("button")
+        chip.type = "button"
+        chip.className = "chip"
+        chip.setAttribute("data-channel", channel.id)
+        chip.setAttribute(
+          "aria-pressed",
+          channel.id === activeChannel ? "true" : "false"
+        )
+        chip.title = "Drift inside " + channel.label.toLowerCase()
+        chip.appendChild(document.createTextNode(channel.label))
+        const count = document.createElement("span")
+        count.className = "chip-count"
+        count.textContent = String(channel.count)
+        chip.appendChild(count)
+        menuChannels.appendChild(chip)
+      })
+    }
+
     function renderMenu(query) {
       const needle = (query || "").trim().toLowerCase()
       menuFavList.textContent = ""
@@ -1396,6 +2071,7 @@
       const rows = []
 
       apps.forEach(function (app, appIndex) {
+        if (!channelMatches(app, activeChannel)) return
         if (!matchesQuery(app, needle)) return
         rows.push({ app: app, appIndex: appIndex })
       })
@@ -1423,7 +2099,14 @@
       menuFavSection.hidden = favoriteCount === 0
       menuAllSection.hidden = otherCount === 0
       menuEmpty.hidden = favoriteCount + otherCount > 0
-      menuAllHeading.textContent = favoriteCount ? "Other apps" : "All apps"
+      menuEmpty.textContent = activeChannel === "all"
+        ? "No apps match."
+        : "Nothing in this channel."
+      if (activeChannel === "all") {
+        menuAllHeading.textContent = favoriteCount ? "Other apps" : "All apps"
+      } else {
+        menuAllHeading.textContent = channelLabel(activeChannel)
+      }
     }
 
     function openMenu() {
@@ -1437,8 +2120,10 @@
       menuEl.hidden = false
       titleButton.setAttribute("aria-expanded", "true")
       searchInput.value = ""
+      renderChannels()
       renderMenu("")
       updateCurrentStar()
+      updateCurrentMeta()
       requestAnimationFrame(function () {
         searchInput.focus()
         searchInput.select()
@@ -1475,6 +2160,163 @@
           }
         }
       }
+    }
+
+    function removeDeletedApp(app) {
+      const key = appKey(app)
+      apps = apps.filter(function (item) {
+        return appKey(item) !== key
+      })
+      favorites.delete(key)
+      saveFavorites()
+      if (signals[key]) delete signals[key]
+      deck = deck.filter(function (item) { return item !== key })
+      if (deckCursor > deck.length) deckCursor = 0
+      saveDeck()
+      writeCachedApps(apps)
+      applyApps()
+    }
+
+    function setDeleteBusy(busy) {
+      deleteBusy = busy
+      deletePrimary.disabled = busy || !deleteReady
+      deleteCancel.disabled = busy
+      deleteClose.disabled = busy
+      deletePrimary.textContent = busy ? "Deleting…" : "Delete folder"
+    }
+
+    function resetDeletePanel(app) {
+      deleteTarget = app
+      deleteReady = false
+      deleteOverlay.hidden = false
+      deleteTitle.textContent = app.title || appKey(app)
+      deletePath.textContent = "/" + (app.path || app.dir || "")
+      deleteCommand.textContent = "Working out the command…"
+      deleteOutput.hidden = true
+      deleteOutput.textContent = ""
+      deleteStatus.className = "delete-status"
+      deleteStatus.textContent = ""
+      setDeleteBusy(false)
+    }
+
+    function closeDeletePanel(reopen) {
+      if (deleteBusy) return
+      deleteRequest += 1
+      deleteTarget = null
+      deleteReady = false
+      deleteOverlay.hidden = true
+      deleteStatus.textContent = ""
+      if (reopen && apps.length) openMenu()
+    }
+
+    function showDeleteError(data) {
+      const error = (data && (data.error || data.message)) || "The folder could not be deleted."
+      const output = (data && data.output) || ""
+      deleteStatus.className = "delete-status is-bad"
+      deleteStatus.textContent = error.split("\n")[0].slice(0, 140)
+      deleteOutput.textContent = output
+      deleteOutput.hidden = !output
+    }
+
+    function openDeletePanel(app) {
+      if (!canDelete || !app) return
+      const dir = app.path || app.dir || ""
+      if (!dir || dir === ".") return
+      closeMenu(false)
+      resetDeletePanel(app)
+      const request = ++deleteRequest
+      deleteCancel.focus()
+
+      fetch("/__ribbon/delete.json?dir=" + encodeURIComponent(dir), {
+        cache: "no-store",
+        headers: { "X-Ribbon-Token": ribbonToken }
+      })
+        .then(function (response) {
+          return response.json()
+            .catch(function () {
+              return { ok: false, error: "Unexpected response from the server." }
+            })
+            .then(function (data) {
+              data.statusCode = response.status
+              return data
+            })
+        })
+        .then(function (data) {
+          if (request !== deleteRequest || deleteTarget !== app) return
+          if (!data || !data.ok || !data.command) {
+            deleteCommand.textContent = "—"
+            showDeleteError(data)
+            return
+          }
+          deleteCommand.textContent = data.command
+          deletePath.textContent = data.path || ("/" + dir)
+          deleteReady = true
+          setDeleteBusy(false)
+          deletePrimary.focus()
+        })
+        .catch(function (error) {
+          if (request !== deleteRequest) return
+          deleteCommand.textContent = "—"
+          showDeleteError({ error: error.message || "Could not prepare the delete." })
+        })
+    }
+
+    function confirmDelete() {
+      if (!deleteTarget || deleteBusy || !deleteReady) return
+      const app = deleteTarget
+      const key = appKey(app)
+      const dir = app.path || app.dir || ""
+      const wasCurrent = index >= 0 && appKey(apps[index]) === key
+      const fallback = apps.filter(function (item) {
+        return appKey(item) !== key
+      })[0] || null
+
+      setDeleteBusy(true)
+      deleteStatus.className = "delete-status"
+      deleteStatus.textContent = "Running the command…"
+      deleteOutput.hidden = true
+      deleteOutput.textContent = ""
+
+      fetch("/__ribbon/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ribbon-Token": ribbonToken
+        },
+        body: JSON.stringify({ dir: dir })
+      })
+        .then(function (response) {
+          return response.json()
+            .catch(function () {
+              return { ok: false, error: "Unexpected response from the server." }
+            })
+            .then(function (data) {
+              data.statusCode = response.status
+              return data
+            })
+        })
+        .then(function (data) {
+          if (!data || !data.ok) {
+            setDeleteBusy(false)
+            showDeleteError(data)
+            return
+          }
+          deleteBusy = false
+          deleteRequest += 1
+          deleteOverlay.hidden = true
+          deleteTarget = null
+          deleteReady = false
+          removeDeletedApp(app)
+          if (wasCurrent) {
+            location.assign(fallback ? fallback.url : "/")
+          } else {
+            openMenu()
+          }
+        })
+        .catch(function (error) {
+          setDeleteBusy(false)
+          showDeleteError({ error: error.message || "The request failed." })
+        })
     }
 
     function defaultRepoName() {
@@ -2028,7 +2870,7 @@
       const action = button.getAttribute("data-act")
       if (action === "prev") go(-1)
       else if (action === "next") go(1)
-      else if (action === "random") random()
+      else if (action === "drift") drift()
       else if (action === "reload") reloadApp()
       else if (action === "hide") setManual(true)
     })
@@ -2046,6 +2888,28 @@
       const app = currentApp()
       if (app) toggleFavorite(app, false)
       starCurrent.focus()
+    })
+    keepButton.addEventListener("click", function () {
+      const entry = signals[appKey(currentApp())] || {}
+      signal("keep", !entry.keep)
+    })
+    parkButton.addEventListener("click", function () {
+      const entry = signals[appKey(currentApp())] || {}
+      signal("park", !isParked(entry))
+    })
+    menuChannels.addEventListener("click", function (event) {
+      const chip = event.target && event.target.closest
+        ? event.target.closest("[data-channel]")
+        : null
+      if (!chip) return
+      activeChannel = chip.getAttribute("data-channel") || "all"
+      saveChannel()
+      deck = []
+      deckChannel = activeChannel
+      deckCursor = 0
+      renderChannels()
+      renderMenu(searchInput.value)
+      searchInput.focus()
     })
     searchInput.addEventListener("input", function () {
       renderMenu(searchInput.value)
@@ -2073,6 +2937,20 @@
       }
     })
     menuEl.addEventListener("click", function (event) {
+      const remove = event.target && event.target.closest
+        ? event.target.closest(".row-delete")
+        : null
+      if (remove) {
+        const key = remove.getAttribute("data-delete")
+        for (let i = 0; i < apps.length; i += 1) {
+          if (appKey(apps[i]) === key) {
+            openDeletePanel(apps[i])
+            break
+          }
+        }
+        return
+      }
+
       const star = event.target && event.target.closest
         ? event.target.closest(".row-star")
         : null
@@ -2129,6 +3007,23 @@
       if (event.key === "Escape") {
         event.preventDefault()
         closeGitPanel()
+      }
+    })
+
+    deleteCancel.addEventListener("click", function () {
+      closeDeletePanel(true)
+    })
+    deleteClose.addEventListener("click", function () {
+      closeDeletePanel(true)
+    })
+    deletePrimary.addEventListener("click", confirmDelete)
+    deleteOverlay.addEventListener("pointerdown", function (event) {
+      if (event.target === deleteOverlay) closeDeletePanel(true)
+    })
+    deleteOverlay.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        closeDeletePanel(true)
       }
     })
     document.addEventListener("pointerdown", function (event) {
@@ -2189,6 +3084,14 @@
       }
 
       const key = event.key
+      if (!deleteOverlay.hidden) {
+        if (key === "Escape") {
+          closeDeletePanel(true)
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
       if (!gitOverlay.hidden) {
         if (key === "Escape") {
           closeGitPanel()
@@ -2222,7 +3125,13 @@
       else if (key === "]") go(1)
       else if (key === "r" || key === "R") {
         if (event.shiftKey) reloadApp()
-        else random()
+        else drift()
+      } else if (key === "k" || key === "K") {
+        const entry = signals[appKey(currentApp())] || {}
+        signal("keep", !entry.keep)
+      } else if (key === "p" || key === "P") {
+        const entry = signals[appKey(currentApp())] || {}
+        signal("park", !isParked(entry))
       } else if (key === "h" || key === "H") toggleHidden()
       else handled = false
 
@@ -2250,22 +3159,49 @@
       toggle: function () { toggleHidden() },
       prev: function () { go(-1) },
       next: function () { go(1) },
-      random: random,
+      drift: drift,
+      random: drift,
+      keep: function (on) {
+        const entry = signals[appKey(currentApp())] || {}
+        signal("keep", typeof on === "boolean" ? on : !entry.keep)
+      },
+      park: function (on) {
+        const entry = signals[appKey(currentApp())] || {}
+        signal("park", typeof on === "boolean" ? on : !isParked(entry))
+      },
+      channel: function () { return activeChannel },
       apps: apps
     }
 
-    function update(nextApps) {
+    function update(nextApps, nextMeta) {
       const next = nextApps.filter(function (app) {
         return app && typeof app.url === "string" && app.url
       })
       if (!next.length) return
       apps = next
+      if (nextMeta) {
+        if (nextMeta.token) ribbonToken = nextMeta.token
+        if (typeof nextMeta.write === "boolean") {
+          canDelete = !!(nextMeta.write && ribbonToken)
+        }
+        if (nextMeta.state && nextMeta.state.assets) {
+          mergeSignals(nextMeta.state.assets)
+        }
+      }
       applyApps()
+      if (!openedRecorded) {
+        openedRecorded = true
+        if (currentApp()) signal("open", true)
+      }
     }
 
     setTopOffset(!manualHidden, false)
     applyState()
     document.documentElement.appendChild(host)
+    if (!openedRecorded) {
+      openedRecorded = true
+      if (currentApp()) signal("open", true)
+    }
     return update
   }
 
@@ -2301,6 +3237,24 @@
       return sessionStorage.getItem(STORAGE_KEY) === "1"
     } catch (_) {
       return false
+    }
+  }
+
+  function readChannel() {
+    try {
+      return sessionStorage.getItem(CHANNEL_KEY) || "all"
+    } catch (_) {
+      return "all"
+    }
+  }
+
+  function readDeck() {
+    try {
+      const data = JSON.parse(sessionStorage.getItem(DECK_KEY) || "null")
+      if (!data || !Array.isArray(data.order)) return null
+      return data
+    } catch (_) {
+      return null
     }
   }
 

@@ -31,6 +31,32 @@
     }
   }
 
+  const TYPE_COLORS = [
+    "oklch(68% 0.11 78)",
+    "oklch(64% 0.09 145)",
+    "oklch(62% 0.09 245)",
+    "oklch(64% 0.11 28)",
+    "oklch(64% 0.08 305)",
+    "oklch(64% 0.07 195)"
+  ]
+
+  function typeColor(index) {
+    return TYPE_COLORS[index % TYPE_COLORS.length]
+  }
+
+  function formatSize(bytes) {
+    if (!bytes) return "0 B"
+    const units = [ "B", "KB", "MB", "GB" ]
+    let value = bytes
+    let unit = 0
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024
+      unit += 1
+    }
+    const rounded = unit === 0 || value >= 10 ? Math.round(value) : value.toFixed(1)
+    return rounded + " " + units[unit]
+  }
+
   function fileList(files) {
     if (!files || !files.length) {
       return '<p class="rc-empty">No files listed.</p>'
@@ -40,6 +66,59 @@
       return "<li class=\"rc-file" + (folder ? " is-folder" : "") + "\">" +
         esc(name) + "</li>"
     }).join("") + "</ul>"
+  }
+
+  function statsLine(stats) {
+    if (!stats) return ""
+    if (!stats.files && !stats.folders) {
+      return '<span class="rc-stats">Empty folder</span>'
+    }
+    const bits = []
+    bits.push(stats.files + (stats.files === 1 ? " file" : " files"))
+    bits.push(stats.folders + (stats.folders === 1 ? " folder" : " folders"))
+    if (stats.size) bits.push(formatSize(stats.size))
+    return '<span class="rc-stats">' + bits.map(function (bit) {
+      return "<span>" + esc(bit) + "</span>"
+    }).join('<span class="rc-dot">·</span>') + "</span>"
+  }
+
+  function typeBar(stats) {
+    if (!stats || !stats.types || !stats.types.length) return ""
+    const total = stats.types.reduce(function (sum, item) {
+      return sum + item.count
+    }, 0)
+    if (!total) return ""
+    return '<div class="rc-bar" role="img" aria-label="File types">' +
+      stats.types.map(function (item, index) {
+        const width = Math.max(3, (item.count / total) * 100)
+        return '<span class="rc-bar-seg" style="width:' + width.toFixed(2) +
+          "%;background:" + typeColor(index) + '" title="' + esc(item.ext) +
+          " · " + item.count + '"></span>'
+      }).join("") +
+      "</div>" +
+      '<div class="rc-types">' +
+      stats.types.map(function (item, index) {
+        return '<span class="rc-type-chip"><i style="background:' +
+          typeColor(index) + '"></i>' + esc(item.ext) + " <b>" +
+          item.count + "</b></span>"
+      }).join("") +
+      "</div>"
+  }
+
+  function tileGrid(stats, files) {
+    if (!stats || !stats.recent || !stats.recent.length) return fileList(files)
+    return '<div class="rc-grid">' + stats.recent.map(function (item) {
+      const ext = item.dir
+        ? "DIR"
+        : (item.name.split(".").pop() || "FILE").slice(0, 4).toUpperCase()
+      return '<div class="rc-tile' + (item.dir ? " is-folder" : "") + '">' +
+        '<span class="rc-tile-badge">' + esc(ext) + "</span>" +
+        '<span class="rc-tile-name" title="' + esc(item.name) + '">' +
+        esc(item.name) + (item.dir ? "/" : "") + "</span>" +
+        '<span class="rc-tile-size">' +
+        (item.dir ? "folder" : formatSize(item.size)) + "</span>" +
+        "</div>"
+    }).join("") + "</div>"
   }
 
   function typeLabel(app) {
@@ -52,7 +131,8 @@
     const icon = app.icon || "PR"
     const color = app.color || "#d0a64a"
     const description = app.description ||
-      "A local project in your ribbon, shown here because the folder has no web page."
+      "A folder in your ribbon, shown here because it has no web page."
+    const stats = app.stats
     const run = app.run
       ? '<div class="rc-fact">' +
           "<dt>Run</dt>" +
@@ -77,12 +157,17 @@
           "<dt>Updated</dt><dd>" + esc(dateLabel(app.mtime)) + "</dd>" +
         "</div>" +
         run +
-        '<div class="rc-fact">' +
-          "<dt>Files</dt><dd>" + fileList(app.files) + "</dd>" +
-        "</div>" +
       "</dl>" +
+      '<section class="rc-contents">' +
+        '<div class="rc-contents-head">' +
+          '<span class="rc-contents-title">Contents</span>' +
+          statsLine(stats) +
+        "</div>" +
+        typeBar(stats) +
+        tileGrid(stats, app.files) +
+      "</section>" +
       '<footer class="rc-foot">' +
-        "No web page in this folder, so Ribbon shows its project card." +
+        "No web page in this folder, so Ribbon shows its contents." +
       "</footer>" +
     "</article>"
   }

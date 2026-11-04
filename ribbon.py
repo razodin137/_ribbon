@@ -20,15 +20,18 @@ Handy first commands:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import threading
 import time
 import webbrowser
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from html import escape, unescape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -37,9 +40,10 @@ from typing import ClassVar
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 APP_DIR = Path(__file__).resolve().parent
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 HTML_SUFFIXES = (".html", ".htm")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdown", ".mkd")
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif", ".bmp")
 CARD_ROUTE = "/__ribbon/card/"
 PREFERRED_HTML = ("index.html", "app.html", "main.html", "home.html", "site.html", "start.html")
 PREFERRED_MARKDOWN = (
@@ -54,6 +58,10 @@ PREFERRED_MARKDOWN = (
 README_NAMES = ("README.md", "readme.md", "README.markdown", "README.txt", "README", "README.rst")
 README_COMMIT_MESSAGE = "Add README"
 MAX_README_CHARS = 20000
+STATE_VERSION = 1
+STATE_DIR_NAME = "ribbon"
+PARK_DAYS = 14
+STATE_LOCK = threading.Lock()
 
 STATE_LABELS = {
     "clean": "all pushed",
@@ -130,37 +138,50 @@ SKIP_DIRS = {
 }
 
 
-def app_child_count(path: Path) -> int:
-    """How many direct child folders Ribbon would list."""
+def child_dirs(path: Path) -> list[Path]:
     try:
-        entries = list(path.iterdir())
-    except OSError:
-        return 0
-    count = 0
-    for entry in entries:
-        if entry.resolve() == APP_DIR:
-            continue
-        if (
-            entry.is_dir()
+        return [
+            entry
+            for entry in path.iterdir()
+            if entry.is_dir()
             and not entry.name.startswith(".")
             and entry.name not in SKIP_DIRS
-            and is_app_folder(entry)
-        ):
-            count += 1
-    return count
+            and entry.resolve() != APP_DIR
+        ]
+    except OSError:
+        return []
+
+
+def is_container(path: Path) -> bool:
+    """A folder that only holds projects, like Work/tries."""
+    try:
+        filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
+    except OSError:
+        return False
+    if choose_html(filenames):
+        return False
+    kind = project_kind(path, filenames)
+    if kind and kind.get("type") != "Project":
+        return False
+    return bool(child_dirs(path))
 
 
 def default_root() -> Path:
-    """The folder that most likely holds the user's apps.
+    """The folder whose child directories Ribbon should list.
 
-    If _ribbon sits beside the apps, that folder wins. If it sits inside one
-    app (the original layout), the folder one level further up wins.
+    If _ribbon sits in a wrapper folder (Work) beside a single container
+    (tries), list the container's children. If _ribbon sits beside the
+    projects, list them directly.
     """
     parent = APP_DIR.parent
-    if app_child_count(parent) > 0:
+    children = child_dirs(parent)
+    if len(children) == 1 and is_container(children[0]):
+        return children[0]
+    if children:
         return parent
+
     grandparent = parent.parent
-    if grandparent != parent and app_child_count(grandparent) > 0:
+    if grandparent != parent and child_dirs(grandparent):
         return grandparent
     return parent
 
@@ -708,6 +729,92 @@ def folder_entries(path: Path) -> list[str]:
     return entries
 
 
+def folder_stats(path: Path) -> dict:
+    """A compact, visual summary of one folder: types, sizes, recent items."""
+    try:
+        children = [
+            entry
+            for entry in path.iterdir()
+            if not entry.name.startswith(".")
+        ]
+    except OSError:
+        children = []
+
+    items: list[dict] = []
+    folders = 0
+    total = 0
+    for child in children:
+        if child.is_dir():
+            if child.name in SKIP_DIRS:
+                continue
+            folders += 1
+            try:
+                mtime = int(child.stat().st_mtime)
+            except OSError:
+                mtime = 0
+            items.append({
+                "name": child.name,
+                "dir": True,
+                "size": 0,
+                "mtime": mtime,
+            })
+            continue
+        try:
+            stat = child.stat()
+        except OSError:
+            continue
+        items.append({
+            "name": child.name,
+            "dir": False,
+            "size": stat.st_size,
+            "mtime": int(stat.st_mtime),
+        })
+        total += stat.st_size
+
+    types: dict[str, dict] = {}
+    files = 0
+    for item in items:
+        if item["dir"]:
+            continue
+        files += 1
+        ext = Path(item["name"]).suffix.lower().lstrip(".") or "file"
+        bucket = types.setdefault(ext, {"ext": ext, "count": 0, "size": 0})
+        bucket["count"] += 1
+        bucket["size"] += item["size"]
+
+    recent = sorted(items, key=lambda item: item["mtime"], reverse=True)[:8]
+    images = [
+        item["name"]
+        for item in items
+        if not item["dir"] and Path(item["name"]).suffix.lower() in IMAGE_SUFFIXES
+    ][:6]
+    return {
+        "files": files,
+        "folders": folders,
+        "size": total,
+        "types": sorted(
+            types.values(), key=lambda item: (-item["count"], item["ext"])
+        )[:6],
+        "recent": recent,
+        "images": images,
+    }
+
+
+def folder_info(path: Path, rel_dir: str) -> dict:
+    """A folder that has no page, project signature, or document."""
+    return {
+        "kind": "project",
+        "title": fallback_title(rel_dir),
+        "description": "",
+        "type": "Folder",
+        "icon": "DIR",
+        "run": "",
+        "files": folder_entries(path),
+        "stats": folder_stats(path),
+        "color": type_color("Folder"),
+    }
+
+
 TYPE_COLORS = {
     "HTML": "hsl(28 64% 62%)",
     "Markdown": "hsl(250 34% 68%)",
@@ -720,6 +827,7 @@ TYPE_COLORS = {
     "Make": "hsl(282 28% 65%)",
     "Docker": "hsl(205 50% 62%)",
     "Project": "hsl(40 10% 62%)",
+    "Folder": "hsl(40 8% 58%)",
 }
 DEFAULT_TYPE_COLOR = "hsl(40 10% 62%)"
 
@@ -747,6 +855,7 @@ def markdown_info(path: Path, rel_dir: str) -> dict | None:
         "icon": "MD",
         "run": "",
         "files": folder_entries(path),
+        "stats": folder_stats(path),
         "color": type_color("Markdown"),
         "markdown_path": rel_path,
     }
@@ -769,29 +878,9 @@ def project_info(path: Path, rel_dir: str) -> dict | None:
         "icon": kind["icon"],
         "run": kind["run"],
         "files": folder_entries(path),
+        "stats": folder_stats(path),
         "color": type_color(kind["type"]),
     }
-
-
-def has_git_ancestor(path: Path, root: Path) -> bool:
-    """True when a parent folder between path and root is a Git repository."""
-    parent = path.parent
-    while parent != root and parent != parent.parent:
-        if (parent / ".git").exists():
-            return True
-        parent = parent.parent
-    return False
-
-
-def is_app_folder(path: Path) -> bool:
-    try:
-        filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
-    except OSError:
-        return False
-    html = choose_html(filenames)
-    if html:
-        return not is_shell_page(path / html)
-    return project_kind(path, filenames) is not None or choose_markdown(filenames) is not None
 
 
 def is_shell_page(path: Path) -> bool:
@@ -1771,6 +1860,61 @@ def run_git_action(action: str, target: Path, body: dict) -> dict:
     return _action_error("Unknown Git action.")
 
 
+def directory_app(path: Path, root: Path, include_untitled: bool) -> dict:
+    """One directory, represented as its page or as a folder card."""
+    rel_dir = path.relative_to(root).as_posix()
+    try:
+        filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
+    except OSError:
+        filenames = []
+
+    html = choose_html(filenames)
+    if html and not is_shell_page(path / html):
+        page = path / html
+        title = extract_title(page)
+        if title or include_untitled:
+            url = "/" + quote(rel_dir, safe="/") + "/"
+            if html != "index.html":
+                url += quote(html)
+            try:
+                mtime = int(page.stat().st_mtime)
+            except OSError:
+                mtime = 0
+            return {
+                "kind": "page",
+                "url": url,
+                "file": "/" + quote(f"{rel_dir}/{html}", safe="/"),
+                "path": rel_dir,
+                "title": title or fallback_title(rel_dir),
+                "type": "HTML",
+                "icon": "HTML",
+                "mtime": mtime,
+                "color": type_color("HTML"),
+            }
+
+    info = project_info(path, rel_dir)
+    if not info:
+        info = folder_info(path, rel_dir)
+    try:
+        mtime = int(path.stat().st_mtime)
+    except OSError:
+        mtime = 0
+    if info["kind"] == "markdown":
+        rel_file = info.get("markdown_path") or rel_dir
+        url = "/" + quote(rel_file, safe="/")
+        file = url
+    else:
+        url = CARD_ROUTE + quote(rel_dir + "/", safe="/")
+        file = ""
+    return {
+        **info,
+        "url": url,
+        "file": file,
+        "path": rel_dir,
+        "mtime": mtime,
+    }
+
+
 def discover(
     root: Path,
     include_untitled: bool = False,
@@ -1778,7 +1922,7 @@ def discover(
     max_age: float = 1.0,
     git_max_age: float = GIT_CACHE_SECONDS,
 ) -> list[dict]:
-    """Every page or project folder under root, in stable path order."""
+    """One entry per immediate child folder of root, in stable name order."""
     now = time.monotonic()
     cache_key = f"{root}|{int(include_untitled)}|{int(with_git)}"
     if (
@@ -1788,84 +1932,93 @@ def discover(
         return _cache["apps"]  # type: ignore[return-value]
 
     apps: list[dict] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        directory = Path(dirpath)
-        dirnames[:] = sorted(
-            d
-            for d in dirnames
-            if d not in SKIP_DIRS
-            and not d.startswith(".")
-            and directory / d != APP_DIR
-        )
-        if directory == APP_DIR:
-            continue
+    try:
+        children = sorted(root.iterdir(), key=lambda item: item.name.lower())
+    except OSError:
+        children = []
 
-        html = choose_html(filenames)
-        page = directory / html if html else None
-        if page is not None and is_shell_page(page):
+    for child in children:
+        if not child.is_dir():
             continue
-
-        if page is not None:
-            title = extract_title(page)
-            if not title and not include_untitled:
-                continue
-            rel_dir = page.parent.relative_to(root).as_posix()
-            rel_file = page.relative_to(root).as_posix()
-            if rel_dir == ".":
-                url = "/" if page.name == "index.html" else "/" + quote(page.name)
-            else:
-                url = "/" + quote(rel_dir, safe="/") + "/"
-                if page.name != "index.html":
-                    url += quote(page.name)
-            try:
-                mtime = int(page.stat().st_mtime)
-            except OSError:
-                mtime = 0
-            app = {
-                "kind": "page",
-                "url": url,
-                "file": "/" + quote(rel_file, safe="/"),
-                "path": rel_dir,
-                "title": title or fallback_title(rel_dir),
-                "type": "HTML",
-                "icon": "HTML",
-                "mtime": mtime,
-                "color": type_color("HTML"),
-            }
-            if with_git:
-                app["git"] = git_status(directory, max_age=git_max_age)
-            apps.append(app)
+        if child.name.startswith(".") or child.name in SKIP_DIRS:
             continue
-
-        rel_dir = directory.relative_to(root).as_posix()
-        info = project_info(directory, rel_dir)
-        if not info or has_git_ancestor(directory, root):
+        if child == APP_DIR:
             continue
         try:
-            mtime = int(directory.stat().st_mtime)
-        except OSError:
-            mtime = 0
-        if info["kind"] == "markdown":
-            rel_file = info.get("markdown_path") or rel_dir
-            url = "/" + quote(rel_file, safe="/")
-            file = url
-        else:
-            url = CARD_ROUTE + (quote(rel_dir, safe="/") + "/" if rel_dir != "." else "")
-            file = ""
-        app = {
-            **info,
-            "url": url,
-            "file": file,
-            "path": rel_dir,
-            "mtime": mtime,
-        }
+            child.resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            continue
+
+        app = directory_app(child, root, include_untitled)
         if with_git:
-            app["git"] = git_status(directory, max_age=git_max_age)
+            app["git"] = git_status(child, max_age=git_max_age)
         apps.append(app)
 
     apps.sort(key=lambda app: app["path"].lower())
     _cache.update(at=now, root=cache_key, apps=apps)
     return apps
+
+
+def delete_plan(root: Path, requested: str) -> dict:
+    """Validate a direct child folder and describe the exact removal command."""
+    root = root.resolve()
+    name = str(requested or "").strip()
+    if (
+        not name
+        or name in (".", "..")
+        or "/" in name
+        or "\\" in name
+        or name.startswith(".")
+    ):
+        raise ValueError("That is not a folder in the ribbon list.")
+    target = root / name
+    if target.is_symlink():
+        raise ValueError("Ribbon will not delete a symlink.")
+    try:
+        resolved = target.resolve(strict=True)
+    except OSError:
+        raise ValueError("That folder no longer exists.") from None
+    if not resolved.is_dir() or resolved.parent != root:
+        raise ValueError("That is not a folder directly inside the ribbon root.")
+    if resolved == APP_DIR.resolve():
+        raise ValueError("That is Ribbon's own folder.")
+    path = str(resolved)
+    return {
+        "dir": name,
+        "path": path,
+        "command": "rm -rf -- " + shlex.quote(path),
+    }
+
+
+def remove_directory(root: Path, plan: dict) -> dict:
+    """Run the exact command shown to the user, then forget the folder's state."""
+    path = str(plan.get("path") or "")
+    command = str(plan.get("command") or "")
+    if not path or not command:
+        return _action_error("Ribbon could not work out what to delete.")
+    ok, output = _run_command(["rm", "-rf", "--", path], cwd=root, timeout=30)
+    if not ok:
+        return _action_error("The folder could not be deleted.", output)
+    if os.path.lexists(path):
+        return _action_error(
+            "The command finished, but the folder is still there.",
+            output,
+        )
+    with STATE_LOCK:
+        state = load_state(root)
+        assets = state.get("assets")
+        key = str(plan.get("dir") or "")
+        if isinstance(assets, dict) and key in assets:
+            assets.pop(key, None)
+            save_state(root, state)
+    GIT_CACHE.clear()
+    _cache["at"] = 0.0
+    return {
+        **_action_ok(output),
+        "dir": key,
+        "path": path,
+        "command": command,
+    }
 
 
 def inject_html(data: bytes, token: str = "") -> bytes:
@@ -1925,6 +2078,8 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
         fields.append("mtime: " + str(int(app.get("mtime") or 0)))
         if app.get("files"):
             fields.append("files: " + js_literal(app["files"]))
+        if app.get("stats"):
+            fields.append("stats: " + js_literal(app["stats"]))
         if app["kind"] == "markdown":
             markdown_path = app.get("markdown_path") or unquote(app["file"]).lstrip("/")
             text = read_markdown(root / markdown_path)
@@ -1938,6 +2093,89 @@ def write_apps_file(root: Path, include_untitled: bool) -> tuple[Path, int]:
     target = APP_DIR / "apps.js"
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return target, len(apps)
+
+
+def state_home() -> Path:
+    configured = os.environ.get("XDG_STATE_HOME")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".local" / "state"
+
+
+def state_path(root: Path) -> Path:
+    digest = hashlib.sha1(str(root).encode("utf-8")).hexdigest()[:12]
+    return state_home() / STATE_DIR_NAME / f"state-{digest}.json"
+
+
+def empty_state(root: Path) -> dict:
+    return {"version": STATE_VERSION, "root": str(root), "assets": {}}
+
+
+def load_state(root: Path) -> dict:
+    try:
+        data = json.loads(state_path(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return empty_state(root)
+    if not isinstance(data, dict) or data.get("root") != str(root):
+        return empty_state(root)
+    if not isinstance(data.get("assets"), dict):
+        data["assets"] = {}
+    data["version"] = STATE_VERSION
+    return data
+
+
+def save_state(root: Path, state: dict) -> None:
+    path = state_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    temp.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temp, path)
+
+
+def public_state(state: dict) -> dict:
+    return {
+        "version": state.get("version", STATE_VERSION),
+        "assets": state.get("assets", {}),
+    }
+
+
+def apply_signal(state: dict, key: str, signal: str, value: object) -> dict:
+    assets = state.setdefault("assets", {})
+    entry = assets.get(key)
+    if not isinstance(entry, dict):
+        entry = {}
+    now = datetime.now(timezone.utc)
+    if signal == "open":
+        try:
+            opens = int(entry.get("opens") or 0)
+        except (TypeError, ValueError):
+            opens = 0
+        entry["opens"] = opens + 1
+        entry["last_opened"] = now.isoformat(timespec="seconds")
+    elif signal == "keep":
+        entry["keep"] = bool(value)
+        if entry["keep"]:
+            entry["parked_until"] = None
+    elif signal == "park":
+        entry["parked_until"] = (
+            (now + timedelta(days=PARK_DAYS)).isoformat(timespec="seconds")
+            if value
+            else None
+        )
+    elif signal == "note":
+        note = str(value or "").strip()
+        if note:
+            entry["note"] = note[:500]
+        else:
+            entry.pop("note", None)
+    else:
+        raise ValueError("unknown signal")
+    entry["updated"] = now.isoformat(timespec="seconds")
+    assets[key] = entry
+    return state
 
 
 class RibbonHandler(SimpleHTTPRequestHandler):
@@ -1958,11 +2196,12 @@ class RibbonHandler(SimpleHTTPRequestHandler):
         self._handle(head=True)
 
     def do_POST(self) -> None:
-        if urlsplit(self.path).path != "/__ribbon/git":
+        route = urlsplit(self.path).path
+        if route not in ("/__ribbon/git", "/__ribbon/signal", "/__ribbon/delete"):
             self.send_error(404, "Not found")
             return
 
-        if not self.write_enabled:
+        if route == "/__ribbon/git" and not self.write_enabled:
             self._send_json(
                 {
                     "ok": False,
@@ -1972,42 +2211,28 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        origin = self.headers.get("Origin")
-        if origin and origin not in self.allowed_origins:
+        if route == "/__ribbon/delete" and not self.write_enabled:
             self._send_json(
-                {"ok": False, "error": "This request did not come from the ribbon page."},
+                {
+                    "ok": False,
+                    "error": "Deleting is disabled. Start ribbon.py on 127.0.0.1 without --no-git-actions.",
+                },
                 403,
             )
             return
 
-        content_type = (self.headers.get("Content-Type") or "").lower()
-        if not content_type.startswith("application/json"):
-            self._send_json({"ok": False, "error": "Expected JSON."}, 415)
+        if not self._post_guard():
             return
 
-        token = self.headers.get("X-Ribbon-Token") or ""
-        if not secrets.compare_digest(token, self.token):
-            self._send_json(
-                {"ok": False, "error": "Missing or wrong ribbon token."}, 403
-            )
+        body = self._read_json_body()
+        if body is None:
             return
 
-        try:
-            length = int(self.headers.get("Content-Length") or "0")
-        except ValueError:
-            length = 0
-        if length <= 0 or length > 65536:
-            self._send_json({"ok": False, "error": "Bad request size."}, 400)
-            return
+        if route == "/__ribbon/signal":
+            return self._handle_signal(body)
 
-        try:
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            self._send_json({"ok": False, "error": "Bad JSON."}, 400)
-            return
-        if not isinstance(body, dict):
-            self._send_json({"ok": False, "error": "Bad request."}, 400)
-            return
+        if route == "/__ribbon/delete":
+            return self._handle_delete(body)
 
         requested = str(body.get("dir") or "")
         try:
@@ -2046,6 +2271,108 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             "write": self.write_enabled,
         }
         self._send_json(payload, 200 if result.get("ok") else 409)
+
+    def _post_guard(self) -> bool:
+        origin = self.headers.get("Origin")
+        if origin and origin not in self.allowed_origins:
+            self._send_json(
+                {"ok": False, "error": "This request did not come from the ribbon page."},
+                403,
+            )
+            return False
+
+        content_type = (self.headers.get("Content-Type") or "").lower()
+        if not content_type.startswith("application/json"):
+            self._send_json({"ok": False, "error": "Expected JSON."}, 415)
+            return False
+
+        token = self.headers.get("X-Ribbon-Token") or ""
+        if not secrets.compare_digest(token, self.token):
+            self._send_json(
+                {"ok": False, "error": "Missing or wrong ribbon token."}, 403
+            )
+            return False
+        return True
+
+    def _read_json_body(self) -> dict | None:
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            length = 0
+        if length <= 0 or length > 65536:
+            self._send_json({"ok": False, "error": "Bad request size."}, 400)
+            return None
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._send_json({"ok": False, "error": "Bad JSON."}, 400)
+            return None
+        if not isinstance(body, dict):
+            self._send_json({"ok": False, "error": "Bad request."}, 400)
+            return None
+        return body
+
+    def _handle_signal(self, body: dict) -> None:
+        if not self.token:
+            self._send_json({"ok": False, "error": "State is read-only here."}, 403)
+            return
+
+        key = str(body.get("path") or "")
+        signal = str(body.get("signal") or "")
+        if not key:
+            self._send_json({"ok": False, "error": "Missing app path."}, 400)
+            return
+
+        apps = discover(
+            self.root,
+            include_untitled=self.include_untitled,
+            with_git=False,
+            max_age=0,
+        )
+        if not any(app.get("path") == key for app in apps):
+            self._send_json(
+                {"ok": False, "error": "That app is not in the ribbon."}, 404
+            )
+            return
+
+        with STATE_LOCK:
+            state = load_state(self.root)
+            try:
+                apply_signal(state, key, signal, body.get("value"))
+            except ValueError:
+                self._send_json({"ok": False, "error": "Unknown signal."}, 400)
+                return
+            save_state(self.root, state)
+
+        self._send_json({"ok": True, "state": public_state(state)})
+
+    def _deletion_plan(self, requested: str) -> dict:
+        plan = delete_plan(self.root, requested)
+        apps = discover(
+            self.root,
+            include_untitled=self.include_untitled,
+            with_git=False,
+            max_age=0,
+        )
+        if not any(app.get("path") == plan["dir"] for app in apps):
+            raise ValueError("That folder is not in the ribbon list.")
+        return plan
+
+    def _delete_allowed(self) -> bool:
+        if not self.write_enabled or not self.token:
+            return False
+        token = self.headers.get("X-Ribbon-Token") or ""
+        return secrets.compare_digest(token, self.token)
+
+    def _handle_delete(self, body: dict) -> None:
+        requested = str(body.get("dir") or "")
+        try:
+            plan = self._deletion_plan(requested)
+        except ValueError as error:
+            self._send_json({"ok": False, "error": str(error)}, 400)
+            return
+        result = remove_directory(self.root, plan)
+        self._send_json(result, 200 if result.get("ok") else 409)
 
     def _send_json(self, payload: dict, status: int = 200) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -2102,7 +2429,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                         markdown = info.get("markdown_path")
                         if markdown:
                             index = self.root.resolve() / markdown
-                    elif info:
+                    else:
                         return self._serve_card(
                             CARD_ROUTE + (quote(rel, safe="/") + "/" if rel != "." else ""),
                             head,
@@ -2122,7 +2449,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
 
     def _serve_html(self, target: Path, head: bool) -> None:
         try:
-            token = self.token if self.write_enabled else ""
+            token = self.token
             data = inject_html(target.read_bytes(), token)
         except OSError:
             self.send_error(404, "File not found")
@@ -2160,7 +2487,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             + "\n</body>\n"
             "</html>\n"
         ).encode("utf-8")
-        payload = inject_html(doc, self.token if self.write_enabled else "")
+        payload = inject_html(doc, self.token)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -2185,7 +2512,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
 
         rel_dir = target.relative_to(self.root.resolve()).as_posix()
         info = project_info(target, rel_dir)
-        if not info or info["kind"] != "project":
+        if not info:
+            info = folder_info(target, rel_dir)
+        if info["kind"] == "markdown":
             self.send_error(404, "No project here")
             return
         info["path"] = rel_dir
@@ -2211,7 +2540,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             "</body>\n"
             "</html>\n"
         ).encode("utf-8")
-        payload = inject_html(doc, self.token if self.write_enabled else "")
+        payload = inject_html(doc, self.token)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -2233,8 +2562,11 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                             max_age=0,
                             git_max_age=0,
                         ),
-                        "token": self.token if self.write_enabled else "",
+                        "token": self.token,
                         "write": self.write_enabled,
+                        "state": public_state(load_state(self.root))
+                        if self.token
+                        else {},
                     },
                     ensure_ascii=False,
                 ).encode("utf-8")
@@ -2270,6 +2602,24 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                     ensure_ascii=False,
                 ).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
+            elif name == "delete.json":
+                if not self._delete_allowed():
+                    self._send_json(
+                        {
+                            "ok": False,
+                            "error": "Deleting is disabled. Start ribbon.py on 127.0.0.1 without --no-git-actions.",
+                        },
+                        403,
+                    )
+                    return
+                requested = (parse_qs(urlsplit(self.path).query).get("dir") or [""])[0]
+                try:
+                    plan = self._deletion_plan(requested)
+                except ValueError as error:
+                    self._send_json({"ok": False, "error": str(error)}, 400)
+                    return
+                self._send_json({"ok": True, **plan})
+                return
             else:
                 self.send_error(404, "Not found")
                 return
@@ -2289,26 +2639,27 @@ class RibbonHandler(SimpleHTTPRequestHandler):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ribbon.py",
-        description="Browse a folder of HTML apps with a floating switcher bar.",
+        description="Browse a folder of project directories with a floating switcher bar.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python3 ribbon.py                 start the server and open the first app\n"
-            "  python3 ribbon.py --list          show every app it can find, then quit\n"
+            "  python3 ribbon.py                 start the server and open the first folder\n"
+            "  python3 ribbon.py --list          show every folder it can find, then quit\n"
             "  python3 ribbon.py --write-apps    refresh apps.js for the static shell\n"
-            "  python3 ribbon.py --app 3         start on app number 3\n"
+            "  python3 ribbon.py --app 3         start on folder number 3\n"
             "  python3 ribbon.py --root ~/sites --port 9000\n"
             "\n"
-            "Ribbon looks for the folder that holds your apps: beside this script\n"
-            "first, then one level further up. Use --root to point it anywhere.\n"
-            "It lists folders with an HTML page (index.html preferred) or a project."
+            "Ribbon lists the folders directly inside your root folder. If _ribbon\n"
+            "sits in a wrapper like Work/ beside a single projects folder, it uses\n"
+            "that folder. Use --root to point it anywhere. A folder with a page\n"
+            "opens the page; every other folder opens a contents card."
         ),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
 
     commands = parser.add_argument_group("commands")
     commands.add_argument(
-        "--list", action="store_true", help="list the apps it found and quit"
+        "--list", action="store_true", help="list the folders it found and quit"
     )
     commands.add_argument(
         "--write-apps",
@@ -2332,7 +2683,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--app",
         type=int,
         metavar="N",
-        help="open app number N instead of the first",
+        help="start on folder number N instead of the first",
     )
     server.add_argument("--no-open", action="store_true", help="don't launch a browser")
     server.add_argument("--verbose", action="store_true", help="log every request")
@@ -2346,7 +2697,7 @@ def build_parser() -> argparse.ArgumentParser:
     finding.add_argument(
         "--include-untitled",
         action="store_true",
-        help="also list pages that have no <title>",
+        help="open pages that have no <title> instead of their folder card",
     )
     return parser
 
@@ -2357,7 +2708,7 @@ def state_label(app: dict) -> str:
 
 
 def print_apps(root: Path, apps: list[dict]) -> None:
-    noun = "app" if len(apps) == 1 else "apps"
+    noun = "folder" if len(apps) == 1 else "folders"
     print(f"\n  Ribbon found {len(apps)} {noun} in {root}\n")
     width = len(str(len(apps)))
     for index, app in enumerate(apps, 1):
@@ -2371,11 +2722,12 @@ def print_apps(root: Path, apps: list[dict]) -> None:
 
 
 def print_no_apps(root: Path, include_untitled: bool) -> None:
-    print(f"\n  No apps found in {root}\n")
-    print("  Ribbon lists folders with an HTML page (index.html preferred)")
-    print("  or a project folder with a README, script, or build file.")
+    print(f"\n  No folders found in {root}\n")
+    print("  Ribbon lists every folder directly inside the root folder.")
+    print("  A folder with a page opens that page. Every other folder opens")
+    print("  a card with its README, file types, and contents.")
     if not include_untitled:
-        print("  Pages without a title are skipped by default:\n")
+        print("  Pages without a title show their folder card instead:\n")
         print("    python3 ribbon.py --list --include-untitled\n")
     print("  Try pointing it somewhere else:\n")
     print(f"    python3 ribbon.py --root {root.parent}")
@@ -2463,8 +2815,9 @@ def main() -> None:
         "localhost",
         "::1",
     )
+    local_host = args.host in ("127.0.0.1", "localhost", "::1")
     RibbonHandler.write_enabled = write_enabled
-    RibbonHandler.token = secrets.token_urlsafe(24) if write_enabled else ""
+    RibbonHandler.token = secrets.token_urlsafe(24) if local_host else ""
     origins = {base.rstrip("/")}
     if args.host in ("127.0.0.1", "localhost"):
         origins.add(f"http://127.0.0.1:{chosen_port}")
@@ -2479,7 +2832,9 @@ def main() -> None:
     print()
     print(f"  Ribbon {VERSION} is running")
     print(f"  folder  {root}")
-    print(f"  apps    {len(apps)}")
+    print(f"  folders {len(apps)}")
+    if RibbonHandler.token:
+        print(f"  state   {state_path(root)}")
     print(f"  open    {launch}")
     if args.port != 0 and chosen_port != args.port:
         print(f"  note    port {args.port} was busy, using {chosen_port}")
@@ -2491,7 +2846,7 @@ def main() -> None:
     shell = static_shell_url(base, root)
     if shell:
         print(f"  shell   {shell}")
-    print("  keys    [ ] prev/next · r random · h hide · Ctrl+C stop")
+    print("  keys    [ ] prev/next · r drift · k keep · p park · h hide · Ctrl+C stop")
     print()
 
     if not args.no_open:

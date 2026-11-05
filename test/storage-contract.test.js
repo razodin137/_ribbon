@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-// BOOT_SCRIPT in ribbon.py runs before ribbon.js and reads the same session
+// BOOT_SCRIPT in shell.py runs before ribbon.js and reads the same session
 // storage keys. The two halves have to agree or the bar flashes visible on
 // every load, so pin them together here.
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -17,17 +17,17 @@ function jsConstant(ribbonJs, name) {
 
 function readContract() {
   const ribbonJs = readFileSync(join(root, "ribbon.js"), "utf8")
-  const ribbonPy = readFileSync(join(root, "ribbon.py"), "utf8")
+  const shellPy = readFileSync(join(root, "shell.py"), "utf8")
 
-  const start = ribbonPy.indexOf("BOOT_SCRIPT = (")
-  const end = ribbonPy.indexOf("\n)\n", start)
-  assert.ok(start >= 0 && end > start, "BOOT_SCRIPT is missing from ribbon.py")
+  const start = shellPy.indexOf("BOOT_SCRIPT = (")
+  const end = shellPy.indexOf("\n)\n", start)
+  assert.ok(start >= 0 && end > start, "BOOT_SCRIPT is missing from shell.py")
 
   return {
     ribbonJs: ribbonJs,
     storageKey: jsConstant(ribbonJs, "STORAGE_KEY"),
     scrollKey: jsConstant(ribbonJs, "SCROLL_KEY"),
-    boot: ribbonPy.slice(start, end)
+    boot: shellPy.slice(start, end)
   }
 }
 

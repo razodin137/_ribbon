@@ -5,20 +5,20 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 
 // Cross-document view transitions are configured in the page shell that
-// ribbon.py injects. The opt-in and the bar's name have to sit in the
+// shell.py injects. The opt-in and the bar's name have to sit in the
 // document, not in the bar's shadow-root stylesheet.
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const ribbon = readFileSync(join(root, "ribbon.py"), "utf8")
-const start = ribbon.indexOf("VIEW_TRANSITION_CSS = (")
-const end = ribbon.indexOf("BAR_MARKUP = ", start)
-const transition = ribbon.slice(start, end)
+const shell = readFileSync(join(root, "shell.py"), "utf8")
+const start = shell.indexOf("VIEW_TRANSITION_CSS = (")
+const end = shell.indexOf("BAR_MARKUP = ", start)
+const transition = shell.slice(start, end)
 
 test("pages opt in to cross-document view transitions", () => {
-  assert.match(ribbon, /@view-transition \{ navigation: auto; \}/)
+  assert.match(shell, /@view-transition \{ navigation: auto; \}/)
 })
 
 test("the bar keeps its name in both documents and does not cross-fade", () => {
-  assert.match(ribbon, /view-transition-name:ribbon-bar!important/)
+  assert.match(shell, /view-transition-name:ribbon-bar!important/)
   assert.match(transition, /::view-transition-old\(ribbon-bar\)/)
   assert.match(transition, /::view-transition-new\(ribbon-bar\)/)
   assert.match(transition, /animation: none;/)

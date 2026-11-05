@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url"
 // root has already resolved its starting style. The transition has to be off
 // during that change or the bar animates away on every load.
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const ribbonPy = readFileSync(join(root, "ribbon.py"), "utf8")
+const shellPy = readFileSync(join(root, "shell.py"), "utf8")
 const barCss = readFileSync(join(root, "bar.css"), "utf8")
 
-const start = ribbonPy.indexOf("BOOT_SCRIPT = (")
-const end = ribbonPy.indexOf("\n)\n", start)
-assert.ok(start >= 0 && end > start, "BOOT_SCRIPT is missing from ribbon.py")
-const boot = ribbonPy.slice(start, end)
+const start = shellPy.indexOf("BOOT_SCRIPT = (")
+const end = shellPy.indexOf("\n)\n", start)
+assert.ok(start >= 0 && end > start, "BOOT_SCRIPT is missing from shell.py")
+const boot = shellPy.slice(start, end)
 
 // The literal is a chain of byte strings, so join it the way Python would.
 function bootScriptSource() {

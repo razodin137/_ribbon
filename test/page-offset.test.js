@@ -12,14 +12,15 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const read = (name) => readFileSync(join(root, name), "utf8")
 
 const ribbonPy = read("ribbon.py")
+const shellPy = read("shell.py")
 const configPy = read("config.py")
 const ribbonJs = read("ribbon.js")
 
 test("the page reserves the bar's height before any script runs", () => {
   assert.match(configPy, /^BAR_HEIGHT = 40$/m)
-  assert.match(ribbonPy, /PAGE_OFFSET_CSS = \(/)
-  assert.match(ribbonPy, /html::before/)
-  assert.match(ribbonPy, /height:\{BAR_HEIGHT\}px/)
+  assert.match(shellPy, /PAGE_OFFSET_CSS = \(/)
+  assert.match(shellPy, /html::before/)
+  assert.match(shellPy, /height:\{BAR_HEIGHT\}px/)
   assert.match(
     ribbonPy,
     /VIEW_TRANSITION_CSS\.encode\("utf-8"\)\s*\+\s*PAGE_OFFSET_CSS\.encode\("utf-8"\)/
@@ -33,7 +34,7 @@ test("the offset is not an in-flow body child", () => {
 
 test("hiding the bar by hand hides the page offset too", () => {
   assert.match(
-    ribbonPy,
+    shellPy,
     /html:has\(\[data-ribbon-host\]\[data-ribbon-hidden\]\)::before/
   )
   assert.match(ribbonJs, /toggleAttribute\("data-ribbon-hidden", !on\)/)

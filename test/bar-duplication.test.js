@@ -32,15 +32,15 @@ test("no function that lives in bar.js is defined again in the host", () => {
   )
 })
 
-// ribbon.py paints the shell, then ribbon.js finds its pieces by selector. A
+// shell.py paints the shell, then ribbon.js finds its pieces by selector. A
 // class or data attribute renamed on one side only turns every lookup into
 // null, so check the pair here. The README calls these the bar's two halves.
 
-const shell = barMarkup(read("ribbon.py"))
+const shell = barMarkup(read("shell.py"))
 const selectors = staticShadowSelectors(read("ribbon.js"))
 
 test("the markup guard can read the shell and the host", () => {
-  assert.ok(shell.includes('class="bar"'), "BAR_MARKUP was not read from ribbon.py")
+  assert.ok(shell.includes('class="bar"'), "BAR_MARKUP was not read from shell.py")
   assert.ok(selectors.length > 20, "no static selectors were found in ribbon.js")
 })
 
@@ -58,7 +58,7 @@ test("every static selector in the host exists in the bar markup", () => {
 
 function barMarkup(source) {
   const start = source.indexOf('BAR_MARKUP = "".join(')
-  assert.notEqual(start, -1, "BAR_MARKUP is missing from ribbon.py")
+  assert.notEqual(start, -1, "BAR_MARKUP is missing from shell.py")
   const open = source.indexOf('"""', start)
   const close = source.indexOf('"""', open + 3)
   assert.notEqual(close, -1, "BAR_MARKUP's markup string is unterminated")

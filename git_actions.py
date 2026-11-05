@@ -14,6 +14,8 @@ from html import escape
 from pathlib import Path
 from urllib.parse import quote
 
+from config import MAX_README_CHARS, README_COMMIT_MESSAGE
+from content import choose_html, find_readme
 from git_repo import (
     DEFAULT_GITIGNORE,
     _action_error,
@@ -28,13 +30,6 @@ from git_repo import (
     gitignore_requirement,
     pages_requirement,
     read_git_status,
-)
-
-from ribbon import (
-    MAX_README_CHARS,
-    README_COMMIT_MESSAGE,
-    choose_html,
-    find_readme,
 )
 
 

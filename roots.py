@@ -10,12 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scan import SKIP_DIRS
+from config import APP_DIR, SKIP_DIRS
+from content import choose_html, project_kind
 
 
 def child_dirs(path: Path) -> list[Path]:
-    from ribbon import APP_DIR
-
     try:
         return [
             entry
@@ -31,8 +30,6 @@ def child_dirs(path: Path) -> list[Path]:
 
 def is_container(path: Path) -> bool:
     """A folder that only holds projects, like Work/tries."""
-    from ribbon import choose_html, project_kind
-
     try:
         filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
     except OSError:
@@ -101,8 +98,6 @@ def default_root() -> Path | None:
     home folder, or a system folder is refused, so the caller has to ask for
     --root.
     """
-    from ribbon import APP_DIR
-
     parent = APP_DIR.parent
     children = child_dirs(parent)
     candidate: Path | None = None

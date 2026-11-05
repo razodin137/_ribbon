@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 
-from config import APP_DIR, CARD_ROUTE, type_color
+from config import APP_DIR, CARD_ROUTE, SKIP_DIRS, type_color
 from content import (
     choose_html,
     choose_markdown,
@@ -26,7 +26,7 @@ from content import (
     readme_summary,
 )
 from git_repo import GIT_CACHE_SECONDS, GIT_STATUS_WORKERS, git_status
-from scan import SKIP_DIRS, folder_entries, folder_info, folder_stats
+from scan import folder_entries, folder_info, folder_stats
 
 
 _cache: dict[str, object] = {"at": 0.0, "root": "", "apps": []}

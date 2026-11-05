@@ -20,11 +20,12 @@ function runPython(lines) {
 
 function defaultRootFor(appDir, home) {
   const output = runPython([
-    "import json, pathlib, ribbon",
+    "import json, pathlib, ribbon, roots",
+    // roots.default_root() reads roots.APP_DIR, so patch it there.
     "pathlib.Path.home = classmethod(lambda cls: pathlib.Path(" +
       JSON.stringify(home) +
       "))",
-    "ribbon.APP_DIR = pathlib.Path(" + JSON.stringify(appDir) + ")",
+    "roots.APP_DIR = pathlib.Path(" + JSON.stringify(appDir) + ")",
     "root = ribbon.default_root()",
     "print(json.dumps(None if root is None else str(root)))"
   ])

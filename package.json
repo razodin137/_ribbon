@@ -7,8 +7,9 @@
     "build": "python3 build.py",
     "lint": "eslint . && stylelint \"bar.css\" \"card.css\" \"markdown.css\"",
     "test": "node --test",
+    "check:python": "python3 -m py_compile *.py && python3 -c \"import ribbon, git_actions\"",
     "check:assets": "python3 build.py --check",
-    "check": "npm run lint && npm test && npm run check:assets"
+    "check": "npm run lint && npm run check:python && npm test && npm run check:assets"
   },
   "devDependencies": {
     "@37signals/eslint-config": "file:/home/mrjohn/Work/tries/2026-11-03-house-style/house-style/eslint-config",

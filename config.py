@@ -15,6 +15,25 @@ VERSION = "1.4.0"
 HTML_SUFFIXES = (".html", ".htm")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdown", ".mkd")
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif", ".bmp")
+SKIP_DIRS = {
+    "node_modules",
+    "venv",
+    "env",
+    ".venv",
+    "__pycache__",
+    ".cache",
+    ".next",
+    ".turbo",
+    ".parcel-cache",
+    "site-packages",
+    "vendor",
+    "bower_components",
+    "dist",
+    "build",
+    "out",
+    "target",
+    "coverage",
+}
 CARD_ROUTE = "/__ribbon/card/"
 STATIC_ASSETS = {
     "ribbon.js",

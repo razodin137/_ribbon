@@ -16,6 +16,9 @@ import threading
 import time
 from pathlib import Path
 
+from config import SKIP_DIRS
+from content import choose_html, readme_state
+
 
 DEFAULT_GITIGNORE = """\
 node_modules/
@@ -317,8 +320,6 @@ def git_status(path: Path, max_age: float = GIT_CACHE_SECONDS) -> dict:
 
 
 def list_folder_files(root: Path) -> list[dict]:
-    from ribbon import SKIP_DIRS
-
     files: list[dict] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(
@@ -369,8 +370,6 @@ def _git_in_head(path: Path, relative: str) -> bool:
 
 def find_scratch_dirs(root: Path) -> list[Path]:
     """Every .scratch folder under root, skipping build and vendor folders."""
-    from ribbon import SKIP_DIRS
-
     found: list[Path] = []
     for dirpath, dirnames, _ in os.walk(root):
         dirnames[:] = sorted(
@@ -473,8 +472,6 @@ def file_warnings(root: Path, files: list[dict], repo: bool = False) -> list[str
 
 
 def git_detail(path: Path) -> dict:
-    from ribbon import readme_state
-
     status = read_git_status(path)
     GIT_CACHE[str(path.resolve())] = (time.monotonic(), status)
     identity_ok = bool(_git_text(path, ["config", "user.name"])) and bool(
@@ -559,8 +556,6 @@ def _index_case_mismatch(path: Path) -> str | None:
 
 
 def pages_state(path: Path) -> dict:
-    from ribbon import choose_html
-
     try:
         names = [entry.name for entry in path.iterdir() if entry.is_file()]
     except OSError:

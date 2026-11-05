@@ -12,7 +12,7 @@ import subprocess
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from config import IMAGE_SUFFIXES, type_color
+from config import IMAGE_SUFFIXES, SKIP_DIRS, type_color
 from content import fallback_title
 from git_repo import (
     GITIGNORE_PREVIEW_CHARS,
@@ -24,26 +24,6 @@ from git_repo import (
 
 
 TREE_MAX_ENTRIES = 700
-
-SKIP_DIRS = {
-    "node_modules",
-    "venv",
-    "env",
-    ".venv",
-    "__pycache__",
-    ".cache",
-    ".next",
-    ".turbo",
-    ".parcel-cache",
-    "site-packages",
-    "vendor",
-    "bower_components",
-    "dist",
-    "build",
-    "out",
-    "target",
-    "coverage",
-}
 
 TREE_SKIP_DESCENT = {".git", *SKIP_DIRS}
 

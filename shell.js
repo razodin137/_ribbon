@@ -91,12 +91,6 @@
   let suppressScrollUntil = 0
   const lastTargets = new Map()
   const wiredDocs = new WeakSet()
-  let gitToken = ""
-  let gitDetail = null
-  let gitAction = null
-  let gitBusy = false
-  let gitBlocked = false
-  let gitReturnFocus = null
 
   const ui = bar.createBar({
     root: document,
@@ -127,7 +121,32 @@
       tipRemoteDot: tipRemoteDot,
       tipRepoText: tipRepoText,
       tipChangesText: tipChangesText,
-      tipRemoteText: tipRemoteText
+      tipRemoteText: tipRemoteText,
+      gitOverlay: gitOverlay,
+      gitTitle: gitTitle,
+      gitSummary: gitSummary,
+      gitFiles: gitFiles,
+      gitWarnings: gitWarnings,
+      gitMessageField: gitMessageField,
+      gitMessage: gitMessage,
+      gitNameField: gitNameField,
+      gitName: gitName,
+      gitVisibilityField: gitVisibilityField,
+      gitVisibilityInputs: gitVisibilityInputs,
+      gitDescriptionField: gitDescriptionField,
+      gitDescription: gitDescription,
+      gitReadmeField: gitReadmeField,
+      gitReadme: gitReadme,
+      gitPagesField: gitPagesField,
+      gitPages: gitPages,
+      gitIgnoreField: gitIgnoreField,
+      gitIgnore: gitIgnore,
+      gitNote: gitNote,
+      gitOutput: gitOutput,
+      gitStatus: gitStatus,
+      gitCancel: gitCancel,
+      gitPrimary: gitPrimary,
+      gitClose: gitClose
     },
     apps: apps,
     index: index,
@@ -138,8 +157,10 @@
       matches: function () { return true },
       label: function () { return "All apps" }
     },
-    onSelect: function (app, appIndex) { setApp(appIndex) },
-    onLed: openGitPanel
+    getToken: function () {
+      return gitSession.then(function (session) { return session.token })
+    },
+    onSelect: function (app, appIndex) { setApp(appIndex) }
   })
 
   frame.addEventListener("load", wireFrame)
@@ -205,18 +226,6 @@
     ui.closeMenu(false)
   }, true)
 
-  gitCancel.addEventListener("click", closeGitPanel)
-  gitClose.addEventListener("click", closeGitPanel)
-  gitPrimary.addEventListener("click", submitGitAction)
-  gitOverlay.addEventListener("pointerdown", function (event) {
-    if (event.target === gitOverlay) closeGitPanel()
-  })
-  gitOverlay.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") {
-      event.preventDefault()
-      closeGitPanel()
-    }
-  })
   function setApp(next, updateHash) {
     if (!apps.length) return
     ui.closeTip()
@@ -336,415 +345,6 @@
     }
   }
 
-  function summaryRow(label, value) {
-    const row = document.createElement("div")
-    row.className = "git-summary-row"
-    const labelEl = document.createElement("span")
-    labelEl.className = "git-summary-label"
-    labelEl.textContent = label
-    const valueEl = document.createElement("span")
-    valueEl.className = "git-summary-value"
-    valueEl.textContent = value
-    valueEl.title = value
-    row.appendChild(labelEl)
-    row.appendChild(valueEl)
-    gitSummary.appendChild(row)
-  }
-
-  function renderGitUnavailable(message) {
-    gitDetail = null
-    gitAction = null
-    gitBlocked = false
-    gitTitle.textContent = "Git unavailable"
-    gitSummary.textContent = ""
-    summaryRow("Status", message)
-    gitFiles.hidden = true
-    gitWarnings.hidden = true
-    gitMessageField.hidden = true
-    gitNameField.hidden = true
-    gitVisibilityField.hidden = true
-    gitDescriptionField.hidden = true
-    gitReadmeField.hidden = true
-    gitPagesField.hidden = true
-    gitIgnoreField.hidden = true
-    gitNote.hidden = true
-    gitOutput.hidden = true
-    gitStatus.className = "git-status"
-    gitStatus.textContent = ""
-    gitPrimary.hidden = true
-    gitCancel.textContent = "Close"
-    gitCancel.focus()
-  }
-
-  function renderGitPanel(detail, focus, success, extra) {
-    gitDetail = detail
-    gitAction = bar.decideGitAction(detail, focus)
-    gitBlocked = false
-    if (gitAction === "pages" && detail.pages && !detail.pages.index) {
-      gitAction = "pages-entry"
-    }
-
-    const app = ui.currentApp()
-    const titles = {
-      init: "Create a Git repository",
-      commit: "Commit changes",
-      push: "Push commits",
-      remote: "Create a GitHub remote",
-      pages: "Publish to GitHub Pages",
-      "pages-entry": "GitHub Pages needs an index.html",
-      info: "Git status"
-    }
-    const labels = {
-      init: "Create repo + commit",
-      commit: "Commit changes",
-      push: "Push commits",
-      remote: "Create repo + push",
-      pages: "Publish to GitHub Pages",
-      "pages-entry": "Create index.html"
-    }
-    gitTitle.textContent = titles[gitAction] || "Git status"
-
-    gitSummary.textContent = ""
-    summaryRow("Folder", detail.root || (app && (app.dir || app.url)) || "—")
-    summaryRow("Branch", detail.branch || "—")
-    const fileCount = detail.files ? detail.files.length : 0
-    summaryRow(
-      "Changes",
-      fileCount
-        ? fileCount + " file" + (fileCount === 1 ? "" : "s")
-        : detail.repo
-          ? "clean"
-          : "no repository"
-    )
-    summaryRow("Remote", detail.remote_url || (detail.has_remote ? "configured" : "none"))
-    if (detail.repo && detail.has_remote) {
-      const sync = []
-      if (detail.upstream) {
-        if (detail.ahead) sync.push(detail.ahead + " to push")
-        if (detail.behind) sync.push(detail.behind + " behind")
-        if (!sync.length) sync.push("up to date")
-      } else {
-        sync.push("no upstream")
-      }
-      summaryRow("Sync", sync.join(", "))
-    }
-
-    const files = detail.files || []
-    gitFiles.textContent = ""
-    gitFiles.hidden = !((gitAction === "commit" || gitAction === "init") && files.length)
-    if (!gitFiles.hidden) {
-      files.slice(0, 12).forEach(function (item) {
-        const row = document.createElement("div")
-        row.className = "git-file"
-        const code = document.createElement("span")
-        code.className = "git-file-code"
-        code.textContent = item.code.trim() || "?"
-        const path = document.createElement("span")
-        path.className = "git-file-path"
-        path.textContent = item.path
-        path.title = item.path
-        row.appendChild(code)
-        row.appendChild(path)
-        gitFiles.appendChild(row)
-      })
-      if (files.length > 12) {
-        const more = document.createElement("div")
-        more.className = "git-file-more"
-        more.textContent = "+" + (files.length - 12) + " more"
-        gitFiles.appendChild(more)
-      }
-    }
-
-    const warnings = (detail.warnings || []).filter(function (warning) {
-      return !(
-        gitAction === "init" &&
-        !detail.has_gitignore &&
-        warning.indexOf("No .gitignore") === 0
-      )
-    })
-    gitWarnings.textContent = ""
-    gitWarnings.hidden = warnings.length === 0
-    warnings.forEach(function (warning) {
-      const row = document.createElement("div")
-      row.className = "git-warning"
-      row.textContent = warning
-      gitWarnings.appendChild(row)
-    })
-
-    const canWrite = !!gitToken
-    gitMessageField.hidden = !(gitAction === "commit" || gitAction === "init")
-    if (!gitMessageField.hidden) {
-      gitMessage.value = gitAction === "init"
-        ? "Initial commit"
-        : "Update " + ((app && app.title) || detail.branch || "app")
-    }
-    gitNameField.hidden = gitAction !== "remote"
-    if (!gitNameField.hidden) gitName.value = bar.defaultRepoName(ui.currentApp())
-    gitVisibilityField.hidden = gitAction !== "remote"
-    if (!gitVisibilityField.hidden) {
-      for (let i = 0; i < gitVisibilityInputs.length; i += 1) {
-        gitVisibilityInputs[i].checked = gitVisibilityInputs[i].value === "private"
-      }
-    }
-    gitDescriptionField.hidden = gitAction !== "remote"
-    if (!gitDescriptionField.hidden) gitDescription.value = ""
-    const readmeMissing = !(detail.readme && detail.readme.exists)
-    gitReadmeField.hidden = !(
-      (gitAction === "remote" || gitAction === "pages") && readmeMissing
-    )
-    if (!gitReadmeField.hidden) {
-      gitReadme.value = "# " + ((app && app.title) || "App") + "\n\n"
-    }
-    gitPagesField.hidden = gitAction !== "remote"
-    if (!gitPagesField.hidden) gitPages.checked = false
-    gitIgnoreField.hidden = gitAction !== "init" || !!detail.has_gitignore
-    if (!gitIgnoreField.hidden) gitIgnore.checked = true
-
-    const notes = extra ? [ extra ] : []
-    if (!canWrite) notes.push("Git actions are disabled. Start ribbon.py on 127.0.0.1.")
-    if ((gitAction === "commit" || gitAction === "init") && detail.repo && detail.identity_ok === false) {
-      notes.push(
-        'Set your Git name and email first:\n  git config --global user.name "Your Name"\n  git config --global user.email "you@example.com"'
-      )
-    }
-    if (gitAction === "remote" && detail.gh === false) {
-      notes.push("GitHub CLI (gh) is not installed. Install it, or add a remote by hand.")
-    }
-    if (gitAction === "pages" && detail.gh === false) {
-      notes.push("GitHub CLI (gh) is not installed. Install it to publish with Pages.")
-    }
-    if (gitAction === "pages-entry") {
-      const entry = detail.pages && detail.pages.entry
-      notes.push(
-        "GitHub Pages only serves an index.html at the repository root." +
-        (entry
-          ? " Ribbon will create one that opens " + entry + "."
-          : " Add an HTML page first.")
-      )
-    }
-    if (gitAction === "pages") {
-      notes.push("This enables GitHub Pages for the current branch and sets the Pages address as the repo homepage.")
-    }
-    if (detail.state === "detached") notes.push("You are on a detached HEAD. Switch to a branch first.")
-    if (detail.state === "conflicted") notes.push("Resolve the merge conflicts, then try again.")
-    if (detail.state === "diverged") notes.push("Local and remote have diverged. Pull or rebase before pushing.")
-    if (detail.state === "behind" && gitAction === "info") {
-      notes.push("The remote has commits you do not have yet.")
-    }
-    if (gitAction === "info" && !notes.length) notes.push("Everything is in order.")
-    gitNote.textContent = notes.join("\n\n")
-    gitNote.hidden = notes.length === 0
-
-    gitOutput.hidden = true
-    gitOutput.textContent = ""
-    gitStatus.className = "git-status" + (success ? " is-good" : "")
-    gitStatus.textContent = success || ""
-
-    gitBlocked =
-      !canWrite ||
-      detail.identity_ok === false && (gitAction === "commit" || gitAction === "init") ||
-      (gitAction === "remote" || gitAction === "pages") && detail.gh === false ||
-      gitAction === "pages-entry" && !(detail.pages && detail.pages.entry)
-    gitPrimary.textContent = labels[gitAction] || ""
-    gitPrimary.hidden = !labels[gitAction]
-    gitPrimary.disabled = gitBlocked
-    gitCancel.textContent = gitAction === "info" ? "Close" : "Cancel"
-    gitCancel.disabled = false
-    gitClose.disabled = false
-
-    if (!gitReadmeField.hidden) gitReadme.focus()
-    else if (gitAction === "commit" || gitAction === "init") gitMessage.focus()
-    else if (gitAction === "remote") gitName.focus()
-    else if (gitAction === "push" || gitAction === "pages" || gitAction === "pages-entry") gitPrimary.focus()
-    else gitCancel.focus()
-  }
-
-  function openGitPanel(focus) {
-    const app = ui.currentApp()
-    if (!app || !gitOverlay.hidden) return
-    ui.closeMenu(false)
-    ui.closeTip()
-    gitReturnFocus = document.activeElement
-    gitOverlay.hidden = false
-    gitBusy = false
-    gitStatus.className = "git-status"
-    gitStatus.textContent = ""
-    gitOutput.hidden = true
-    gitOutput.textContent = ""
-    gitTitle.textContent = "Checking Git…"
-    gitSummary.textContent = ""
-    gitFiles.hidden = true
-    gitWarnings.hidden = true
-    gitNote.hidden = true
-    gitMessageField.hidden = true
-    gitNameField.hidden = true
-    gitVisibilityField.hidden = true
-    gitDescriptionField.hidden = true
-    gitReadmeField.hidden = true
-    gitPagesField.hidden = true
-    gitIgnoreField.hidden = true
-    gitPrimary.hidden = true
-
-    if (location.protocol !== "http:" && location.protocol !== "https:") {
-      renderGitUnavailable("Start the ribbon server to use Git actions.")
-      return
-    }
-
-    gitSession
-      .then(function (session) {
-        gitToken = session.token
-        if (gitOverlay.hidden) return null
-        const dir = app.dir || app.url || ""
-        return fetch("/__ribbon/git.json?dir=" + encodeURIComponent(dir), { cache: "no-store" })
-          .then(function (response) {
-            if (!response.ok) throw new Error("HTTP " + response.status)
-            return response.json()
-          })
-          .then(function (detail) {
-            if (gitOverlay.hidden) return
-            ui.setGit(detail)
-            if (app === apps[index]) app.git = detail
-            renderGitPanel(detail, focus, "")
-          })
-      })
-      .catch(function (error) {
-        renderGitUnavailable("Could not read Git status: " + (error.message || error))
-      })
-  }
-
-  function closeGitPanel() {
-    if (gitBusy) return
-    gitOverlay.hidden = true
-    gitDetail = null
-    gitAction = null
-    if (gitReturnFocus && gitReturnFocus.focus) {
-      try {
-        gitReturnFocus.focus()
-      } catch (error) { /* target may be gone */ }
-    }
-    gitReturnFocus = null
-  }
-
-  function setGitBusy(busy) {
-    gitBusy = busy
-    gitPrimary.disabled = busy || gitBlocked
-    gitCancel.disabled = busy
-    gitClose.disabled = busy
-    if (busy) {
-      gitPrimary.textContent = "Working…"
-    } else if (gitAction) {
-      const labels = {
-        init: "Create repo + commit",
-        commit: "Commit changes",
-        push: "Push commits",
-        remote: "Create repo + push",
-        pages: "Publish to GitHub Pages",
-        "pages-entry": "Create index.html"
-      }
-      gitPrimary.textContent = labels[gitAction] || "Continue"
-    }
-  }
-
-  function showGitError(data) {
-    const error = (data && (data.error || data.message)) || "The Git action failed."
-    const output = (data && data.output) || ""
-    gitStatus.className = "git-status is-bad"
-    gitStatus.textContent = error.split("\n")[0].slice(0, 140)
-    gitOutput.textContent = [ error, output ].filter(Boolean).join("\n\n")
-    gitOutput.hidden = !gitOutput.textContent
-  }
-
-  function submitGitAction() {
-    if (gitBusy || !gitAction) return
-    const app = ui.currentApp()
-    if (!app) return
-
-    const payload = { action: gitAction, dir: app.dir || app.url || "" }
-    if (gitAction === "init" || gitAction === "commit") {
-      payload.message = gitMessage.value.trim()
-      if (!payload.message) {
-        gitMessage.focus()
-        return
-      }
-    }
-    if (gitAction === "init") payload.gitignore = gitIgnore.checked
-    if (gitAction === "remote") {
-      payload.name = gitName.value.trim()
-      if (!payload.name) {
-        gitName.focus()
-        return
-      }
-      const checked = document.querySelector('input[name="git-visibility"]:checked')
-      payload.visibility = checked ? checked.value : "private"
-      payload.description = gitDescription.value.trim()
-      payload.pages = gitPages.checked
-    }
-    if (!gitReadmeField.hidden) payload.readme = gitReadme.value
-
-    setGitBusy(true)
-    gitStatus.className = "git-status"
-    gitStatus.textContent = "Working…"
-    gitOutput.hidden = true
-    gitOutput.textContent = ""
-
-    fetch("/__ribbon/git", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Ribbon-Token": gitToken
-      },
-      body: JSON.stringify(payload)
-    })
-      .then(function (response) {
-        return response.json()
-          .catch(function () {
-            return { ok: false, error: "Unexpected response from the server." }
-          })
-          .then(function (data) {
-            data.statusCode = response.status
-            return data
-          })
-      })
-      .then(function (data) {
-        if (!data || !data.ok) {
-          setGitBusy(false)
-          showGitError(data)
-          return
-        }
-        if (data.status) {
-          ui.setGit(data.status)
-          if (app === apps[index]) app.git = data.status
-        }
-        let message = {
-          init: "Repository created and first commit made.",
-          commit: "Changes committed.",
-          push: "Commits pushed.",
-          remote: "GitHub repo created and pushed.",
-          pages: "GitHub Pages is on.",
-          "pages-entry": "Created index.html. Commit and push it, then publish again."
-        }[payload.action] || "Done."
-        let extra = ""
-        if (payload.action === "remote" || payload.action === "pages") {
-          if (data.pages_url) {
-            extra = "GitHub Pages: " + data.pages_url
-            if (data.pages_error) extra += "\n" + data.pages_error
-          } else if (payload.pages && data.pages_error) {
-            message = "GitHub repo created, but Pages setup failed."
-            extra = data.pages_error
-          }
-        }
-        if (data.readme_written) {
-          extra = [ "README.md was committed and pushed.", extra ].filter(Boolean).join("\n")
-        }
-        setGitBusy(false)
-        renderGitPanel(data.status || gitDetail, null, message, extra)
-      })
-      .catch(function (error) {
-        setGitBusy(false)
-        showGitError({ error: error.message || "The request failed." })
-      })
-  }
-
   function disablePaging() {
     for (let i = 0; i < buttons.length; i += 1) {
       const action = buttons[i].getAttribute("data-act")
@@ -852,7 +452,7 @@
     const key = event.key
     if (!gitOverlay.hidden) {
       if (key === "Escape") {
-        closeGitPanel()
+        ui.closeGitPanel()
         event.preventDefault()
         event.stopPropagation()
       }

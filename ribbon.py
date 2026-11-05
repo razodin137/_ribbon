@@ -31,7 +31,7 @@ import subprocess
 import threading
 import time
 import webbrowser
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatchcase
 from functools import partial
 from html import escape, unescape
@@ -250,7 +250,7 @@ def choose_html(filenames: list[str] | set[str]) -> str | None:
             return preferred
     if not names:
         return None
-    return sorted(names, key=str.lower)[0]
+    return min(names, key=str.lower)
 
 
 def find_readme(path: Path) -> Path | None:
@@ -301,7 +301,7 @@ def choose_markdown(filenames: list[str] | set[str]) -> str | None:
     for preferred in PREFERRED_MARKDOWN:
         if preferred.lower() in lowered:
             return lowered[preferred.lower()]
-    return sorted(names, key=str.lower)[0]
+    return min(names, key=str.lower)
 
 
 def read_markdown(path: Path) -> str:
@@ -394,10 +394,8 @@ TABLE_SEP_RE = re.compile(
 
 def _table_cells(line: str) -> list[str]:
     row = line.strip()
-    if row.startswith("|"):
-        row = row[1:]
-    if row.endswith("|"):
-        row = row[:-1]
+    row = row.removeprefix("|")
+    row = row.removesuffix("|")
     return [cell.strip() for cell in row.split("|")]
 
 
@@ -609,7 +607,7 @@ def _render_blocks(text: str) -> str:
             output.append(listing)
             continue
 
-        if line.startswith("    ") or line.startswith("\t"):
+        if line.startswith(("    ", "\t")):
             code = []
             while index < len(lines) and (
                 lines[index].startswith("    ")
@@ -705,9 +703,12 @@ def project_kind(path: Path, filenames: list[str]) -> dict | None:
         try:
             data = json.loads((path / names["package.json"]).read_text(encoding="utf-8"))
             scripts = data.get("scripts") if isinstance(data, dict) else None
-            if isinstance(scripts, dict):
-                if "start" not in scripts and "dev" in scripts:
-                    run = "npm run dev"
+            if (
+                isinstance(scripts, dict)
+                and "start" not in scripts
+                and "dev" in scripts
+            ):
+                run = "npm run dev"
         except (OSError, ValueError):
             pass
         return {"type": "Node", "icon": "JS", "run": run}
@@ -1132,6 +1133,14 @@ def _git_text(path: Path, args: list[str], timeout: float = 4) -> str:
 
 
 def read_git_status(path: Path) -> dict:
+    """Return one coarse state word, plus the flags behind it.
+
+    `state` answers "what is the most urgent thing about this repo?" and the
+    checks below are ordered, so the first true one wins. Branch and history
+    states come before "dirty", which means any of them hides uncommitted work
+    from that word. Read `dirty` and `dirty_count` when the working tree
+    matters; never infer them from `state`.
+    """
     try:
         proc = _git(
             path,
@@ -1154,37 +1163,39 @@ def read_git_status(path: Path) -> dict:
     header = lines[0] if lines else ""
     file_lines = lines[1:]
     dirty = bool(file_lines)
-    info = header[3:] if header.startswith("## ") else ""
+    branch_info = header[3:] if header.startswith("## ") else ""
 
-    counts = ""
-    if " [" in info and info.endswith("]"):
-        info, counts = info[:-1].split(" [", 1)
+    tracking = ""
+    if " [" in branch_info and branch_info.endswith("]"):
+        branch_info, tracking = branch_info[:-1].split(" [", 1)
 
     branch = None
     upstream = None
     detached = False
     no_commits = False
 
-    if info == "HEAD (no branch)":
+    if branch_info == "HEAD (no branch)":
         detached = True
-    elif info.startswith("No commits yet on "):
+    elif branch_info.startswith("No commits yet on "):
         no_commits = True
-        branch = info[len("No commits yet on ") :]
-    elif "..." in info:
-        branch, upstream = info.split("...", 1)
+        branch = branch_info[len("No commits yet on ") :]
+    elif "..." in branch_info:
+        branch, upstream = branch_info.split("...", 1)
     else:
-        branch = info or None
+        branch = branch_info or None
 
     ahead = 0
     behind = 0
-    for match in re.finditer(r"(ahead|behind) (\d+)", counts):
+    for match in re.finditer(r"(ahead|behind) (\d+)", tracking):
         if match.group(1) == "ahead":
             ahead = int(match.group(2))
         else:
             behind = int(match.group(2))
 
     conflicted = any(line[:2] in {"UU", "AA", "DD", "AU", "UA", "DU", "UD"} for line in file_lines)
-    gone = "gone" in counts
+    gone = "gone" in tracking
+    # Ordered on purpose: everything above "dirty" is about the branch or the
+    # history, so it wins the one-word label. See the docstring.
     if detached:
         state = "detached"
     elif no_commits:
@@ -2376,7 +2387,7 @@ def apply_signal(state: dict, key: str, signal: str, value: object) -> dict:
     entry = assets.get(key)
     if not isinstance(entry, dict):
         entry = {}
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if signal == "open":
         try:
             opens = int(entry.get("opens") or 0)
@@ -2587,11 +2598,13 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             raise ValueError("That folder is not in the ribbon list.")
         return plan
 
-    def _delete_allowed(self) -> bool:
-        if not self.write_enabled or not self.token:
-            return False
+    def _delete_error(self) -> str | None:
+        if not self.write_enabled:
+            return "Deleting is disabled. Start ribbon.py on 127.0.0.1 without --no-git-actions."
         token = self.headers.get("X-Ribbon-Token") or ""
-        return secrets.compare_digest(token, self.token)
+        if not self.token or not secrets.compare_digest(token, self.token):
+            return "Missing or wrong ribbon token."
+        return None
 
     def _handle_delete(self, body: dict) -> None:
         requested = str(body.get("dir") or "")
@@ -2771,7 +2784,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             '<div id="ribbon-card"></div>\n'
             "</body>\n"
             "</html>\n"
-        ).encode("utf-8")
+        ).encode()
         embed = info["kind"] == "page" or (
             parse_qs(urlsplit(self.path).query).get("embed") == [ "1" ]
         )
@@ -2838,14 +2851,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                 ).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
             elif name == "delete.json":
-                if not self._delete_allowed():
-                    self._send_json(
-                        {
-                            "ok": False,
-                            "error": "Deleting is disabled. Start ribbon.py on 127.0.0.1 without --no-git-actions.",
-                        },
-                        403,
-                    )
+                error = self._delete_error()
+                if error:
+                    self._send_json({"ok": False, "error": error}, 403)
                     return
                 requested = (parse_qs(urlsplit(self.path).query).get("dir") or [""])[0]
                 try:
@@ -2938,6 +2946,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def state_label(app: dict) -> str:
+    """The one-word label for a repo's state, or its raw state if unknown.
+
+    This is the coarse word from read_git_status, so it can hide uncommitted
+    work. Use the app's `git.dirty` flag when that matters.
+    """
     state = (app.get("git") or {}).get("state", "")
     return STATE_LABELS.get(state, state)
 

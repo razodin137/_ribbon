@@ -154,7 +154,9 @@
       ? ""
       : '<span class="rc-tree-size">' + esc(formatSize(entry.size)) + "</span>"
 
-    return '<li class="' + classes.join(" ") + '" style="--depth: 0">' +
+    const depth = Math.max(0, Math.floor(Number(entry.depth) || 0))
+
+    return '<li class="' + classes.join(" ") + '" style="--depth: ' + depth + '">' +
       '<span class="rc-tree-name">' + esc(entry.path) +
         (entry.dir ? "/" : "") + (entry.link ? " →" : "") + "</span>" +
       '<span class="rc-tree-tags">' + tags.join("") + "</span>" +

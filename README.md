@@ -268,6 +268,9 @@ python3 _ribbon/ribbon.py --write-apps
 
 Then open `_ribbon/index.html`.
 
+`apps.js` is generated locally and is in `.gitignore`, so a fresh clone shows
+an empty bar until you run the command once.
+
 One catch: when you open the file directly, some things are turned off by
 the browser — the keyboard shortcuts and the scroll-to-hide. Some browsers
 also keep favorites in a separate place, or forget them altogether. The
@@ -382,7 +385,7 @@ _ribbon/
   index.html    the no-server page: bar + big window
   boot.js       the tiny check that restores a hidden bar on load
   shell.js      the bar and window used by the no-server page
-  apps.js       the list that page uses (made by --write-apps)
+  apps.js       the list that page uses (made by --write-apps, local only)
   card.js       the contents card: file grid, hidden files, and .gitignore
   card.css      the look of that card
   markdown.css  the look of a rendered Markdown document

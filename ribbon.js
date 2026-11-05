@@ -1668,7 +1668,9 @@
       let weight = 1
       if (!git.repo) weight += 2.4
       else if (state === "conflicted") weight += 2.6
-      else if (state === "dirty") weight += 2
+      // `state` is one word for the whole repo, so a branch fact such as
+      // "behind" or "detached" hides uncommitted work. Read `dirty` itself.
+      else if (git.dirty) weight += 2
       else if (state === "ahead" || state === "diverged") weight += 2.2
       else if (state === "no-upstream" || state === "no-commits") weight += 1.6
       else if (state === "clean") weight += 0.2

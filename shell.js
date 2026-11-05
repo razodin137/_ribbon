@@ -1,3 +1,10 @@
+/* FROZEN — do not add bar features here.
+ *
+ * shell.js is the no-server copy of the bar. It stays as-is until the bar is
+ * extracted into a single shared bar.js. New bar features land in bar.js only;
+ * a fix that must reach both copies goes through that extraction, never a
+ * second hand edit here.
+ */
 (function () {
   "use strict"
 

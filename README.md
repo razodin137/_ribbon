@@ -394,6 +394,9 @@ _ribbon/
   BRIEF.md      the design notes behind Drift, channels, and the Shelf
 ```
 
+**The bar has one source of truth.** New bar features land in `bar.js` only;
+`shell.js` and the no-server `index.html` are frozen pending extraction.
+
 The server does not change your pages. The bar is added only while a page
 is being sent to your browser. Git actions do change the repository, but
 only after you press a button and confirm what will be included. Drift state

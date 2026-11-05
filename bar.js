@@ -169,6 +169,10 @@
     let channelId = channel.id || "all"
     const favorites = readFavorites()
     let menuOpen = false
+    let tipPinned = false
+    let tipTimer = 0
+    let tipIsOpen = false
+    const hoverCapable = !!(window.matchMedia && window.matchMedia("(hover: hover)").matches)
 
     function readFavorites() {
       try {
@@ -471,6 +475,79 @@
       if (app) options.onSelect(app, apps.indexOf(app))
     }
 
+    function setLedLabel(name, text, hint) {
+      const ledButtons = refs.ledButtons || []
+      for (let i = 0; i < ledButtons.length; i += 1) {
+        if (ledButtons[i].getAttribute("data-led") === name) {
+          ledButtons[i].setAttribute("aria-label", text + ". " + hint)
+          ledButtons[i].title = text + " — " + hint
+          return
+        }
+      }
+    }
+
+    function setGit(git) {
+      const lights = gitLights(git)
+
+      refs.ledRepo.className = "led " + lights.repoClass
+      refs.ledChanges.className = "led " + lights.changesClass
+      refs.ledRemote.className = "led " + lights.remoteClass
+      refs.tipRepoDot.className = "led " + lights.repoClass
+      refs.tipChangesDot.className = "led " + lights.changesClass
+      refs.tipRemoteDot.className = "led " + lights.remoteClass
+
+      const repoText = repoTip(git)
+      const changesText = changesTip(git, lights.dirty, lights.count)
+      const remoteText = remoteTip(git, lights.hasRemote)
+      refs.tipRepoText.textContent = repoText
+      refs.tipChangesText.textContent = changesText
+      refs.tipRemoteText.textContent = remoteText
+      refs.ledsWrap.setAttribute("aria-label", repoText + ". " + changesText + ". " + remoteText)
+
+      setLedLabel("repo", repoText, lights.repo ? "Click for Git actions" : "Click to create a repository")
+      setLedLabel("changes", changesText, lights.dirty ? "Click to commit" : "Nothing to commit")
+      setLedLabel(
+        "remote",
+        remoteText,
+        !lights.hasRemote
+          ? "Click to create a remote"
+          : git && git.ahead
+            ? "Click to push"
+            : git && git.state === "clean" && /github\.com[:/]/i.test(git.remote_url || "")
+              ? "Click to publish with Pages"
+              : "Remote status"
+      )
+    }
+
+    function openTip(pin) {
+      if (pin) tipPinned = true
+      tipIsOpen = true
+      refs.ledTip.classList.add("is-open")
+      refs.ledTip.setAttribute("aria-hidden", "false")
+      if (tipTimer) {
+        clearTimeout(tipTimer)
+        tipTimer = 0
+      }
+      if (!hoverCapable && tipPinned) {
+        tipTimer = setTimeout(closeTip, 5000)
+      }
+    }
+
+    function closeTip() {
+      tipPinned = false
+      tipIsOpen = false
+      refs.ledTip.classList.remove("is-open")
+      refs.ledTip.setAttribute("aria-hidden", "true")
+      if (tipTimer) {
+        clearTimeout(tipTimer)
+        tipTimer = 0
+      }
+    }
+
+    function closeTipIfUnpinned() {
+      if (!tipPinned) closeTip()
+    }
+
     refs.titleButton.addEventListener("click", toggleMenu)
     const starButtons = refs.starButtons || []
     for (let i = 0; i < starButtons.length; i += 1) {
@@ -538,6 +615,32 @@
       if (row) selectRow(row)
     })
 
+    refs.ledsWrap.addEventListener("click", function (event) {
+      const button = event.target && event.target.closest
+        ? event.target.closest(".led-btn")
+        : null
+      if (!button) return
+      event.stopPropagation()
+      if (options.onLed) options.onLed(button.getAttribute("data-led"))
+    })
+    refs.ledsWrap.addEventListener("pointerenter", function () {
+      if (hoverCapable) openTip(false)
+    })
+    refs.ledsWrap.addEventListener("pointerleave", closeTipIfUnpinned)
+    const ledButtons = refs.ledButtons || []
+    for (let i = 0; i < ledButtons.length; i += 1) {
+      ledButtons[i].addEventListener("focus", function () {
+        openTip(false)
+      })
+      ledButtons[i].addEventListener("blur", closeTipIfUnpinned)
+    }
+    doc.addEventListener("pointerdown", function (event) {
+      if (!tipIsOpen) return
+      const path = event.composedPath ? event.composedPath() : []
+      if (path.indexOf(refs.ledsWrap.parentNode) !== -1) return
+      closeTip()
+    }, true)
+
     if (refs.menuChannels) {
       refs.menuChannels.addEventListener("click", function (event) {
         const chip = event.target && event.target.closest
@@ -596,9 +699,12 @@
       toggleFavorite: toggleFavorite,
       removeFavorite: removeFavorite,
       isMenuOpen: function () { return menuOpen },
-      setGit: function () { /* the LEDs arrive in a later packet */ },
+      setGit: setGit,
       gitLights: gitLights,
-      gitWorkRank: gitWorkRank
+      gitWorkRank: gitWorkRank,
+      openTip: openTip,
+      closeTip: closeTip,
+      isTipOpen: function () { return tipIsOpen }
     }
   }
 

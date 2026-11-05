@@ -23,7 +23,6 @@
   const peek = document.getElementById("peek")
   const ledsWrap = document.getElementById("leds")
   const ledButtons = document.querySelectorAll(".led-btn")
-  const ledWrap = ledsWrap.parentNode
   const ledTip = document.getElementById("led-tip")
   const tipRepoDot = ledTip.querySelector('[data-tip-led="repo"]')
   const tipChangesDot = ledTip.querySelector('[data-tip-led="changes"]')
@@ -92,9 +91,6 @@
   let suppressScrollUntil = 0
   const lastTargets = new Map()
   const wiredDocs = new WeakSet()
-  let tipPinned = false
-  let tipTimer = 0
-  const hoverCapable = window.matchMedia("(hover: hover)").matches
   let gitToken = ""
   let gitDetail = null
   let gitAction = null
@@ -142,7 +138,8 @@
       matches: function () { return true },
       label: function () { return "All apps" }
     },
-    onSelect: function (app, appIndex) { setApp(appIndex) }
+    onSelect: function (app, appIndex) { setApp(appIndex) },
+    onLed: openGitPanel
   })
 
   frame.addEventListener("load", wireFrame)
@@ -157,7 +154,7 @@
     disablePaging()
     ui.setApps([])
     ui.setIndex(-1)
-    setGit(null)
+    ui.setGit(null)
     ui.updateCurrentStar()
     applyHidden()
   } else {
@@ -208,25 +205,6 @@
     ui.closeMenu(false)
   }, true)
 
-  ledsWrap.addEventListener("click", function (event) {
-    const button = event.target && event.target.closest
-      ? event.target.closest(".led-btn")
-      : null
-    if (!button) return
-    event.stopPropagation()
-    openGitPanel(button.getAttribute("data-led"))
-  })
-  ledsWrap.addEventListener("pointerenter", function () {
-    if (hoverCapable) openTip(false)
-  })
-  ledsWrap.addEventListener("pointerleave", closeTipIfUnpinned)
-  for (let b = 0; b < ledButtons.length; b += 1) {
-    ledButtons[b].addEventListener("focus", function () {
-      openTip(false)
-    })
-    ledButtons[b].addEventListener("blur", closeTipIfUnpinned)
-  }
-
   gitCancel.addEventListener("click", closeGitPanel)
   gitClose.addEventListener("click", closeGitPanel)
   gitPrimary.addEventListener("click", submitGitAction)
@@ -239,15 +217,9 @@
       closeGitPanel()
     }
   })
-  document.addEventListener("pointerdown", function (event) {
-    if (!ledTip.classList.contains("is-open")) return
-    if (ledWrap.contains(event.target)) return
-    closeTip()
-  }, true)
-
   function setApp(next, updateHash) {
     if (!apps.length) return
-    closeTip()
+    ui.closeTip()
     ui.closeMenu(false)
     index = (next + apps.length) % apps.length
     ui.setIndex(index)
@@ -269,7 +241,7 @@
       frame.removeAttribute("srcdoc")
       frame.src = app.url
     }
-    setGit(app.git)
+    ui.setGit(app.git)
     refreshGit(app)
     ui.updateCurrentStar()
 
@@ -288,76 +260,6 @@
     suppressScrollUntil = Date.now() + 300
   }
 
-  function setGit(git) {
-    const lights = bar.gitLights(git)
-
-    ledRepo.className = "led " + lights.repoClass
-    ledChanges.className = "led " + lights.changesClass
-    ledRemote.className = "led " + lights.remoteClass
-    tipRepoDot.className = "led " + lights.repoClass
-    tipChangesDot.className = "led " + lights.changesClass
-    tipRemoteDot.className = "led " + lights.remoteClass
-
-    const repoText = bar.repoTip(git)
-    const changesText = bar.changesTip(git, lights.dirty, lights.count)
-    const remoteText = bar.remoteTip(git, lights.hasRemote)
-    tipRepoText.textContent = repoText
-    tipChangesText.textContent = changesText
-    tipRemoteText.textContent = remoteText
-    ledsWrap.setAttribute("aria-label", repoText + ". " + changesText + ". " + remoteText)
-
-    setLedLabel("repo", repoText, lights.repo ? "Click for Git actions" : "Click to create a repository")
-    setLedLabel("changes", changesText, lights.dirty ? "Click to commit" : "Nothing to commit")
-    setLedLabel(
-      "remote",
-      remoteText,
-      !lights.hasRemote
-        ? "Click to create a remote"
-        : git && git.ahead
-          ? "Click to push"
-          : git && git.state === "clean" && /github\.com[:/]/i.test(git.remote_url || "")
-            ? "Click to publish with Pages"
-            : "Remote status"
-    )
-  }
-
-  function setLedLabel(name, text, hint) {
-    for (let i = 0; i < ledButtons.length; i += 1) {
-      if (ledButtons[i].getAttribute("data-led") === name) {
-        ledButtons[i].setAttribute("aria-label", text + ". " + hint)
-        ledButtons[i].title = text + " — " + hint
-        return
-      }
-    }
-  }
-
-  function openTip(pin) {
-    if (pin) tipPinned = true
-    ledTip.classList.add("is-open")
-    ledTip.setAttribute("aria-hidden", "false")
-    if (tipTimer) {
-      clearTimeout(tipTimer)
-      tipTimer = 0
-    }
-    if (!hoverCapable && tipPinned) {
-      tipTimer = setTimeout(closeTip, 5000)
-    }
-  }
-
-  function closeTip() {
-    tipPinned = false
-    ledTip.classList.remove("is-open")
-    ledTip.setAttribute("aria-hidden", "true")
-    if (tipTimer) {
-      clearTimeout(tipTimer)
-      tipTimer = 0
-    }
-  }
-
-  function closeTipIfUnpinned() {
-    if (!tipPinned) closeTip()
-  }
-
   function refreshGit(app) {
     if (!app || !app.dir) return
     if (location.protocol !== "http:" && location.protocol !== "https:") return
@@ -370,7 +272,7 @@
       .then(function (data) {
         if (!data || app !== apps[index]) return
         app.git = data
-        setGit(data)
+        ui.setGit(data)
       })
       .catch(function () {})
   }
@@ -661,7 +563,7 @@
     const app = ui.currentApp()
     if (!app || !gitOverlay.hidden) return
     ui.closeMenu(false)
-    closeTip()
+    ui.closeTip()
     gitReturnFocus = document.activeElement
     gitOverlay.hidden = false
     gitBusy = false
@@ -700,7 +602,7 @@
           })
           .then(function (detail) {
             if (gitOverlay.hidden) return
-            setGit(detail)
+            ui.setGit(detail)
             if (app === apps[index]) app.git = detail
             renderGitPanel(detail, focus, "")
           })
@@ -810,7 +712,7 @@
           return
         }
         if (data.status) {
-          setGit(data.status)
+          ui.setGit(data.status)
           if (app === apps[index]) app.git = data.status
         }
         let message = {
@@ -865,7 +767,7 @@
     try {
       win.addEventListener("scroll", onScroll, { passive: true })
       doc.addEventListener("scroll", onScroll, { passive: true, capture: true })
-      doc.addEventListener("pointerdown", closeTip, true)
+      doc.addEventListener("pointerdown", function () { ui.closeTip() }, true)
       doc.addEventListener("pointerdown", function () {
         ui.closeMenu(false)
       }, true)
@@ -969,8 +871,8 @@
       return
     }
     if (ui.isMenuOpen()) return
-    if (key === "Escape" && ledTip.classList.contains("is-open")) {
-      closeTip()
+    if (key === "Escape" && ui.isTipOpen()) {
+      ui.closeTip()
       event.preventDefault()
       event.stopPropagation()
       return
@@ -1013,7 +915,7 @@
   function applyHidden() {
     const gone = manualHidden || autoHidden
     if (gone) {
-      closeTip()
+      ui.closeTip()
       ui.closeMenu(false)
     }
     document.documentElement.classList.toggle("is-hidden", gone)

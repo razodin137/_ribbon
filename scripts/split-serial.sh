@@ -4,6 +4,7 @@
 #
 #   MODEL=ollama/deepseek-v4.1-flash:1017-cloud ./scripts/split-serial.sh
 #   MODEL=... FROM=8 TO=8 ./scripts/split-serial.sh    # one step only
+#   ONLY=11-state,07-remove,08-shell ./scripts/split-serial.sh   # explicit order
 #   COMMIT=0 ./scripts/split-serial.sh                 # leave commits alone
 #
 # No --continue and no --session: that is what makes every step a fresh agent.
@@ -18,6 +19,7 @@ MODEL=${MODEL:-ollama/deepseek-v4.1-flash:1017-cloud}
 FROM=${FROM:-1}
 TO=${TO:-99}
 COMMIT=${COMMIT:-1}
+ONLY=${ONLY:-}
 
 mkdir -p "$LOGS"
 cd "$ROOT" || exit 1
@@ -27,12 +29,28 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-for path in "$ROOT"/.opencode/commands/split/*.md; do
+if [ -n "$ONLY" ]; then
+  IFS=',' read -r -a files <<<"$ONLY"
+  for i in "${!files[@]}"; do
+    files[$i]="$ROOT/.opencode/commands/split/${files[$i]}.md"
+  done
+else
+  files=("$ROOT"/.opencode/commands/split/*.md)
+fi
+
+for path in "${files[@]}"; do
   name=$(basename "$path" .md)
   step=$((10#${name%%-*}))
 
-  [ "$step" -lt "$FROM" ] && continue
-  [ "$step" -gt "$TO" ] && continue
+  if [ -z "$ONLY" ]; then
+    [ "$step" -lt "$FROM" ] && continue
+    [ "$step" -gt "$TO" ] && continue
+  fi
+
+  if [ ! -f "$path" ]; then
+    echo "== $name: no such command" >&2
+    exit 1
+  fi
 
   blocked="$LOGS/BLOCKED-$name"
   rm -f "$blocked"

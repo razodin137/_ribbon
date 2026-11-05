@@ -52,8 +52,11 @@ Create `state.py` for the per-root state file.
 - `save_state` writes a pid-and-thread-named temp file opened `0600`, then
   `os.replace`s it, and unlinks on failure. Keep the mode and the unlink; that
   is a documented privacy guarantee.
-- `remove.py` uses `STATE_LOCK` directly. Re-export it or update `remove.py` in
-  the same pass.
+- `remove.py` does not exist yet; it is cut after this step and imports
+  `STATE_LOCK`, `load_state` and `save_state` from here at module level. Never
+  import `ribbon` from `state`: under `python3 ribbon.py` the server runs as
+  `__main__`, so that import loads a second copy of the module and the lock
+  stops being shared.
 - Re-export with an explicit list from `ribbon.py`.
 
 ## Done when

@@ -12,6 +12,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const read = (name) => readFileSync(join(root, name), "utf8")
 
 const ribbonPy = read("ribbon.py")
+const assetsPy = read("assets.py")
 const shellPy = read("shell.py")
 const configPy = read("config.py")
 const ribbonJs = read("ribbon.js")
@@ -42,7 +43,7 @@ test("hiding the bar by hand hides the page offset too", () => {
 })
 
 test("ribbon.js reads the height the server reserved", () => {
-  assert.match(ribbonPy, /data-ribbon-height="'\s*\+\s*str\(BAR_HEIGHT\)/)
+  assert.match(assetsPy, /data-ribbon-height="'\s*\+\s*str\(BAR_HEIGHT\)/)
   assert.match(ribbonJs, /host\.getAttribute\("data-ribbon-height"\)/)
 })
 

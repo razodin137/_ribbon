@@ -43,20 +43,6 @@ GZIP_MIN_BYTES = 512
 # One source for the bar's height: the page offset and ribbon.js both read it.
 BAR_HEIGHT = 40
 
-STATE_LABELS = {
-    "clean": "all pushed",
-    "dirty": "unsaved changes",
-    "ahead": "commits to push",
-    "behind": "behind the remote",
-    "diverged": "ahead and behind",
-    "no-upstream": "not linked to a remote",
-    "no-commits": "no commits yet",
-    "detached": "detached HEAD",
-    "conflicted": "conflicts to resolve",
-    "no-repo": "no git",
-    "error": "git unavailable",
-}
-
 TYPE_COLORS = {
     "HTML": "hsl(28 64% 62%)",
     "Markdown": "hsl(250 34% 68%)",

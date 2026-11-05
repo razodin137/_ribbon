@@ -3267,6 +3267,7 @@ def apply_signal(state: dict, key: str, signal: str) -> dict:
 
 
 class RibbonHandler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     root: Path = APP_DIR.parent
     include_untitled: bool = False
     token: str = ""
@@ -3491,6 +3492,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             if apps:
                 self.send_response(302)
                 self.send_header("Location", apps[0]["url"])
+                self.send_header("Content-Length", "0")
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 return
@@ -3501,6 +3503,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             if not raw_path.endswith("/"):
                 self.send_response(301)
                 self.send_header("Location", raw_path + "/")
+                self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             index = target / "index.html"

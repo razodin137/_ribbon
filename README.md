@@ -378,7 +378,7 @@ python3 _ribbon/ribbon.py --help           # all options, with examples
 
 ## For the very curious
 
-The folder has eleven small pieces:
+The folder has thirteen small pieces:
 
 ```
 _ribbon/
@@ -387,16 +387,18 @@ _ribbon/
   shell.js      the bar and window used by the no-server page
   apps.js       the list that page uses (made by --write-apps, local only)
   card.js       the contents card: file grid, hidden files, and .gitignore
+  bar.js        the shared bar: pure helpers and createBar
   bar.css       the one stylesheet for the bar, shared by both versions
   card.css      the look of that card
   markdown.css  the look of a rendered Markdown document
   ribbon.py     finds the apps, serves them, and saves state
   ribbon.js     the bar itself, for the server version
   BRIEF.md      the design notes behind Drift, channels, and the Shelf
+  BAR-EXTRACTION.md  the plan that moved the bar into bar.js
 ```
 
 **The bar has one source of truth.** New bar features land in `bar.js` only;
-`shell.js` and the no-server `index.html` are frozen pending extraction.
+`shell.js` keeps the no-server host concerns.
 
 The server does not change your pages. The bar is added only while a page
 is being sent to your browser. Git actions do change the repository, but

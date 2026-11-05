@@ -1,9 +1,8 @@
 /* FROZEN — do not add bar features here.
  *
- * shell.js is the no-server copy of the bar. It stays as-is until the bar is
- * extracted into a single shared bar.js. New bar features land in bar.js only;
- * a fix that must reach both copies goes through that extraction, never a
- * second hand edit here.
+ * shell.js is the no-server host. The shared bar lives in bar.js; this file
+ * keeps only the iframe, hash, hide/scroll, and reload concerns. New bar
+ * features land in bar.js, never here.
  */
 (function () {
   "use strict"
@@ -60,16 +59,19 @@
   const gitCancel = document.getElementById("git-cancel")
   const gitPrimary = document.getElementById("git-primary")
   const gitClose = document.getElementById("git-close")
-  const gitSession = fetch("/__ribbon/manifest.json", { cache: "no-store" })
-    .then(function (response) {
-      return response.ok ? response.json() : null
-    })
-    .then(function (data) {
-      return { token: (data && data.token) || "", write: !!(data && data.write) }
-    })
-    .catch(function () {
-      return { token: "", write: false }
-    })
+  const canReachServer = location.protocol === "http:" || location.protocol === "https:"
+  const gitSession = canReachServer
+    ? fetch("/__ribbon/manifest.json", { cache: "no-store" })
+      .then(function (response) {
+        return response.ok ? response.json() : null
+      })
+      .then(function (data) {
+        return { token: (data && data.token) || "", write: !!(data && data.write) }
+      })
+      .catch(function () {
+        return { token: "", write: false }
+      })
+    : Promise.resolve({ token: "", write: false })
 
   const menuEl = document.getElementById("menu")
   const menuCurrentTitle = document.getElementById("menu-current-title")
@@ -271,7 +273,7 @@
 
   function refreshGit(app) {
     if (!app || !app.dir) return
-    if (location.protocol !== "http:" && location.protocol !== "https:") return
+    if (!canReachServer) return
     fetch("/__ribbon/git.json?dir=" + encodeURIComponent(app.dir), {
       cache: "no-store"
     })

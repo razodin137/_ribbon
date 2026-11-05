@@ -1,6 +1,7 @@
-/* Ribbon bar — shared pure helpers.
+/* Ribbon bar — the shared bar: pure helpers plus createBar.
  *
- * Loaded before either host (ribbon.js or shell.js). No DOM, no state.
+ * Loaded before either host (ribbon.js or shell.js). The pure layer has no
+ * DOM or state; createBar owns the bar's shared state and DOM events.
  * Everything here is exposed through window.__RIBBON_BAR__.
  */
 (function () {

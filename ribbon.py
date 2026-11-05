@@ -46,6 +46,14 @@ HTML_SUFFIXES = (".html", ".htm")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdown", ".mkd")
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif", ".bmp")
 CARD_ROUTE = "/__ribbon/card/"
+STATIC_ASSETS = {
+    "ribbon.js",
+    "bar.js",
+    "card.js",
+    "card.css",
+    "bar.css",
+    "markdown.css",
+}
 PREFERRED_HTML = ("index.html", "app.html", "main.html", "home.html", "site.html", "start.html")
 PREFERRED_MARKDOWN = (
     "README.md",
@@ -2881,10 +2889,22 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             self.send_error(500, "Ribbon asset missing")
             return
 
-        self.send_response(200)
+        if name in STATIC_ASSETS:
+            etag = '"' + hashlib.sha256(payload).hexdigest()[:16] + '"'
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+        else:
+            self.send_response(200)
+            self.send_header("Cache-Control", "no-store, max-age=0")
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store, max-age=0")
         self.end_headers()
         if not head:
             self.wfile.write(payload)

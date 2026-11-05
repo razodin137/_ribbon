@@ -20,15 +20,16 @@ function definedNames(source) {
 
 // Functions about the surface the bar sits on, not the bar itself. They are
 // allowed to exist in both hosts because each host owns a different surface.
+// readHidden belongs here too: the hosts use different sessionStorage keys
+// ("ribbon:hidden" and "ribbon:shell-hidden"), so it is not a duplicate to move.
 const HOST_ONLY = new Set([
-  "onScroll", "processScroll", "reloadApp", "setManual", "toggleHidden"
-])
-
-// Duplicates that still exist at the time this guard was written. Shrink this
-// list as the remaining packets land; the last test fails if an entry goes stale.
-const PENDING = new Set([
+  "onScroll", "processScroll", "reloadApp", "setManual", "toggleHidden",
   "readHidden"
 ])
+
+// Duplicates that are actively being moved. Keep this empty unless a packet is
+// mid-flight; the last test fails if an entry is no longer duplicated.
+const PENDING = new Set()
 
 const ribbon = definedNames(read("ribbon.js"))
 const shell = definedNames(read("shell.js"))

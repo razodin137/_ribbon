@@ -40,10 +40,18 @@
 
   function loadBarStyles(shadow) {
     if (!barStyles) {
-      barStyles = fetch(BAR_CSS_URL, { cache: "no-store" }).then(function (response) {
-        if (!response.ok) throw new Error("bar.css " + response.status)
-        return response.text()
-      })
+      const controller = new AbortController()
+      const timer = window.setTimeout(function () {
+        controller.abort()
+      }, 2000)
+      barStyles = fetch(BAR_CSS_URL, { signal: controller.signal })
+        .then(function (response) {
+          if (!response.ok) throw new Error("bar.css " + response.status)
+          return response.text()
+        })
+        .finally(function () {
+          window.clearTimeout(timer)
+        })
     }
     return barStyles.then(function (css) {
       if (typeof CSSStyleSheet === "function" && "replaceSync" in CSSStyleSheet.prototype) {
@@ -65,6 +73,7 @@
         link.addEventListener("load", resolve, { once: true })
         link.addEventListener("error", resolve, { once: true })
         shadow.appendChild(link)
+        window.setTimeout(resolve, 1500)
       })
     })
   }

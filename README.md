@@ -412,4 +412,9 @@ by ESLint and Stylelint. Install the tools once, then run the checker:
 cd _ribbon
 npm install
 npm run lint
+npm test
 ```
+
+The tests load `bar.js`'s pure helpers and fail if a function that moved
+to `bar.js` is defined again in `ribbon.js` or `shell.js`. `npm run check`
+runs both.

@@ -13,6 +13,28 @@
     return app ? app.dir || app.path || app.url || "" : ""
   }
 
+  // The URLs Back and Next would open, in the order the bar would go. With
+  // two apps the same neighbour sits on both sides, so keep it once.
+  function neighborUrls(apps, index) {
+    if (!Array.isArray(apps) || apps.length < 2) return []
+    const urls = []
+    const add = function (app) {
+      const url = app && app.url
+      if (typeof url === "string" && url && urls.indexOf(url) === -1) {
+        urls.push(url)
+      }
+    }
+    if (typeof index !== "number" || index < 0) {
+      add(apps[apps.length - 1])
+      add(apps[0])
+      return urls
+    }
+    if (index >= apps.length) return []
+    add(apps[(index - 1 + apps.length) % apps.length])
+    add(apps[(index + 1) % apps.length])
+    return urls
+  }
+
   function pad(number, total) {
     const width = String(total).length
     let value = String(number)
@@ -26,18 +48,6 @@
       " " + String(app.path || app.dir || "").toLowerCase() +
       " " + String(app.type || "").toLowerCase()
     return haystack.indexOf(query) !== -1
-  }
-
-  function escapeAttribute(value) {
-    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
-      return {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      }[ch]
-    })
   }
 
   function defaultRepoName(app) {
@@ -1084,9 +1094,6 @@
         canDelete = !!next
       },
       setChannel: setChannel,
-      setToken: function (next) {
-        gitToken = next || ""
-      },
       currentApp: currentApp,
       appKey: appKey,
       isFavorite: isFavorite,
@@ -1095,27 +1102,20 @@
       renderMenu: renderMenu,
       openMenu: openMenu,
       closeMenu: closeMenu,
-      toggleMenu: toggleMenu,
-      toggleFavorite: toggleFavorite,
       removeFavorite: removeFavorite,
       isMenuOpen: function () { return menuOpen },
       setGit: setGit,
-      gitLights: gitLights,
-      gitWorkRank: gitWorkRank,
-      openTip: openTip,
       closeTip: closeTip,
       isTipOpen: function () { return tipIsOpen },
-      openGitPanel: openGitPanel,
-      closeGitPanel: closeGitPanel,
-      submitGitAction: submitGitAction
+      closeGitPanel: closeGitPanel
     }
   }
 
   window.__RIBBON_BAR__ = {
     appKey: appKey,
+    neighborUrls: neighborUrls,
     pad: pad,
     matchesQuery: matchesQuery,
-    escapeAttribute: escapeAttribute,
     defaultRepoName: defaultRepoName,
     gitLights: gitLights,
     gitWorkRank: gitWorkRank,

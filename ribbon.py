@@ -208,7 +208,20 @@ META_DESCRIPTION_FIRST_RE = re.compile(
     rb'name\s*=\s*["\']description["\']',
     re.IGNORECASE | re.DOTALL,
 )
+HEAD_CLOSE_RE = re.compile(rb"</head\s*>", re.IGNORECASE)
+BODY_OPEN_RE = re.compile(rb"<body\b[^>]*>", re.IGNORECASE)
 BODY_CLOSE_RE = re.compile(rb"</body\s*>", re.IGNORECASE)
+# Runs before <body> parses, so the declarative shadow bar is already in its
+# hidden state at first paint. ribbon.js reads the same two keys and takes over.
+BOOT_SCRIPT = (
+    b"<script>try{"
+    b"var h=document.documentElement;"
+    b'if(sessionStorage.getItem("ribbon:hidden")==="1")h.classList.add("ribbon-hidden");'
+    b'else if(sessionStorage.getItem("ribbon:scroll")===location.href)'
+    b'h.classList.add("ribbon-scrolled")'
+    b"}catch(_){}"
+    b"</script>"
+)
 
 _cache: dict[str, object] = {"at": 0.0, "root": "", "apps": []}
 
@@ -2262,18 +2275,292 @@ def remove_directory(root: Path, plan: dict) -> dict:
     }
 
 
-def inject_html(data: bytes, token: str = "") -> bytes:
+BAR_HOST_STYLE = (
+    "position:fixed!important;"
+    "top:0!important;"
+    "right:0!important;"
+    "left:0!important;"
+    "width:100%!important;"
+    "height:auto!important;"
+    "margin:0!important;"
+    "padding:0!important;"
+    "border:0!important;"
+    "background:transparent!important;"
+    "z-index:2147483647!important;"
+    "display:block!important;"
+    "pointer-events:none!important;"
+    "isolation:isolate!important;"
+    "view-transition-name:ribbon-bar!important"
+)
+
+# Cross-document view transitions: the bar is a named element in both
+# documents, so it is lifted out of the root cross-fade and survives the
+# navigation unchanged. Naming the host (not .bar inside its shadow root)
+# is what makes the snapshot part of the document's view transition tree.
+VIEW_TRANSITION_CSS = (
+    "@view-transition { navigation: auto; }\n"
+    "::view-transition-old(ribbon-bar),\n"
+    "::view-transition-new(ribbon-bar) {\n"
+    "  animation: none;\n"
+    "  mix-blend-mode: normal;\n"
+    "}\n"
+)
+
+BAR_MARKUP = "".join(
+    line.strip()
+    for line in """\
+<div class="bar" role="navigation" aria-label="App ribbon">
+  <div class="meta">
+    <span class="led-wrap">
+      <span class="leds" role="group" aria-label="Git status" aria-describedby="led-tip">
+        <button class="led-btn" type="button" data-led="repo" aria-label="Repository status"><span class="led off" data-led-dot="repo" aria-hidden="true"></span></button>
+        <button class="led-btn" type="button" data-led="changes" aria-label="Changes status"><span class="led off" data-led-dot="changes" aria-hidden="true"></span></button>
+        <button class="led-btn" type="button" data-led="remote" aria-label="Remote status"><span class="led off" data-led-dot="remote" aria-hidden="true"></span></button>
+      </span>
+      <span class="led-tip" id="led-tip" role="tooltip" aria-hidden="true">
+        <span class="led-tip-row"><span class="led off" data-tip-led="repo" aria-hidden="true"></span><span data-tip-text="repo"></span></span>
+        <span class="led-tip-row"><span class="led off" data-tip-led="changes" aria-hidden="true"></span><span data-tip-text="changes"></span></span>
+        <span class="led-tip-row"><span class="led off" data-tip-led="remote" aria-hidden="true"></span><span data-tip-text="remote"></span></span>
+      </span>
+    </span>
+    <span class="count"></span>
+  </div>
+  <div class="title-wrap">
+    <button class="star-btn title-star" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>
+    <button class="title" type="button" aria-haspopup="dialog" aria-expanded="false" title="Show all apps">
+      <span class="title-text"></span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="actions">
+    <button class="btn" type="button" data-act="prev" aria-label="Previous app" title="Previous app — [">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      <span class="label">Back</span>
+    </button>
+    <button class="btn" type="button" data-act="next" aria-label="Next app" title="Next app — ]">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <span class="label">Next</span>
+    </button>
+    <button class="btn" type="button" data-act="contents" aria-label="Show contents" aria-pressed="false" title="Show contents — C">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span class="label">Contents</span>
+    </button>
+    <button class="btn" type="button" data-act="drift" aria-label="Drift to another app" title="Drift to another app — R">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 4l3 3-3 3"/><path d="M18 20l3-3-3-3"/><path d="M3 7h3c2 0 3.5 1 4.5 2.5l3 5C14.5 16 16 17 18 17h3"/><path d="M3 17h3c2 0 3.5-1 4.5-2.5l3-5C14.5 8 16 7 18 7h3"/></svg>
+      <span class="label">Drift</span>
+    </button>
+    <button class="btn" type="button" data-act="reload" aria-label="Reload app" title="Reload app — Shift+R">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+    </button>
+    <span class="sep" aria-hidden="true"></span>
+    <button class="btn" type="button" data-act="hide" aria-label="Hide ribbon" title="Hide ribbon — H">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="menu" hidden role="dialog" aria-label="All apps">
+    <div class="menu-top">
+      <div class="menu-current">
+        <span class="menu-current-label">Current app</span>
+        <span class="menu-current-title"></span>
+        <span class="menu-current-meta"></span>
+      </div>
+      <button class="star-btn" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>
+    </div>
+    <div class="menu-current-hint">drift deals from the active channel</div>
+    <div class="menu-channels" role="group" aria-label="Channels"></div>
+    <div class="menu-search">
+      <input class="menu-input" type="search" placeholder="Search apps…" aria-label="Search apps" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="menu-scroll">
+      <div class="menu-section" data-section="favorites" hidden>
+        <div class="menu-heading">Favorites</div>
+        <div class="menu-list" data-list="favorites"></div>
+      </div>
+      <div class="menu-section" data-section="all">
+        <div class="menu-heading">All apps</div>
+        <div class="menu-list" data-list="all"></div>
+      </div>
+      <div class="menu-empty" hidden>No apps match.</div>
+    </div>
+  </div>
+</div>
+<div class="card-overlay" hidden>
+  <button class="card-close" type="button" aria-label="Close contents" title="Close contents — Esc">✕ Close</button>
+  <iframe class="card-frame" title="Project contents"></iframe>
+</div>
+<button class="peek" type="button" aria-label="Show ribbon" title="Show ribbon — H">
+  <span aria-hidden="true">▤</span><span class="peek-label">ribbon</span>
+</button>
+<div class="git-overlay" hidden>
+  <div class="git-dialog" role="dialog" aria-modal="true" aria-labelledby="git-title">
+    <div class="git-head">
+      <div class="git-heading">
+        <div class="git-kicker">Git</div>
+        <div class="git-title" id="git-title"></div>
+      </div>
+      <button class="git-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="git-body">
+      <div class="git-summary"></div>
+      <div class="git-files" hidden></div>
+      <div class="git-warnings" hidden></div>
+      <label class="git-field git-message-field" hidden>
+        <span class="git-label">Commit message</span>
+        <input class="git-input git-message" type="text" maxlength="2000" autocomplete="off">
+      </label>
+      <label class="git-field git-name-field" hidden>
+        <span class="git-label">GitHub repo name</span>
+        <input class="git-input git-name" type="text" maxlength="100" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="git-field git-visibility-field" hidden>
+        <span class="git-label">Visibility</span>
+        <div class="git-radios">
+          <label class="git-radio"><input type="radio" name="git-visibility" value="private" checked> Private</label>
+          <label class="git-radio"><input type="radio" name="git-visibility" value="public"> Public</label>
+        </div>
+      </div>
+      <label class="git-field git-description-field" hidden>
+        <span class="git-label">Description (optional)</span>
+        <input class="git-input git-description" type="text" maxlength="350" autocomplete="off" placeholder="What is this app?">
+      </label>
+      <label class="git-field git-readme-field" hidden>
+        <span class="git-label">README.md</span>
+        <textarea class="git-input git-textarea git-readme" rows="6" maxlength="20000" spellcheck="false" placeholder="Write a short README…"></textarea>
+        <span class="git-hint">No README yet. Ribbon will write this to README.md, commit it, and push it before publishing.</span>
+      </label>
+      <label class="git-check git-pages-field" hidden>
+        <input type="checkbox" class="git-pages">
+        <span>Publish with GitHub Pages and set it as the repo homepage</span>
+      </label>
+      <label class="git-check git-ignore-field" hidden>
+        <input type="checkbox" class="git-ignore" checked>
+        <span>Add a .gitignore for node_modules, .venv, dist…</span>
+      </label>
+      <div class="git-note" hidden></div>
+      <pre class="git-output" hidden></pre>
+    </div>
+    <div class="git-actions">
+      <span class="git-status"></span>
+      <button class="btn git-cancel" type="button">Close</button>
+      <button class="btn git-primary" type="button" hidden></button>
+    </div>
+  </div>
+</div>
+<div class="delete-overlay" hidden>
+  <div class="delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-warning">
+    <div class="delete-head">
+      <div class="delete-heading">
+        <div class="delete-kicker">Delete folder</div>
+        <div class="delete-title" id="delete-title"></div>
+      </div>
+      <button class="git-close delete-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="delete-body">
+      <p class="delete-warn" id="delete-warning">This removes the folder and everything inside it. It cannot be undone.</p>
+      <div class="delete-path"></div>
+      <div>
+        <div class="delete-command-label">Command</div>
+        <pre class="delete-command"></pre>
+      </div>
+      <div class="delete-note">Ribbon will run exactly this command, then remove the folder from the list.</div>
+      <pre class="delete-command delete-output" hidden></pre>
+    </div>
+    <div class="delete-actions">
+      <span class="delete-status" role="status" aria-live="polite"></span>
+      <button class="btn delete-cancel" type="button">Cancel</button>
+      <button class="btn delete-primary" type="button" disabled>Delete folder</button>
+    </div>
+  </div>
+</div>
+""".splitlines()
+)
+
+_bar_css_cache: tuple[int, bytes] | None = None
+
+
+def bar_css() -> bytes:
+    global _bar_css_cache
+    path = APP_DIR / "bar.css"
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        return b""
+    if _bar_css_cache is None or _bar_css_cache[0] != mtime:
+        try:
+            _bar_css_cache = (mtime, path.read_bytes())
+        except OSError:
+            return b""
+    return _bar_css_cache[1]
+
+
+def bar_shell_html() -> bytes:
+    return (
+        b'<div data-ribbon-host style="'
+        + BAR_HOST_STYLE.encode("utf-8")
+        + b'"><template shadowrootmode="open"><style>'
+        + bar_css()
+        + b"</style>"
+        + BAR_MARKUP.encode("utf-8")
+        + b"</template></div>"
+    )
+
+
+_asset_version_cache: tuple[tuple, str] | None = None
+
+
+def asset_version() -> str:
+    """A short hash of every static asset, so a cached URL cannot go stale."""
+    global _asset_version_cache
+    stamps = []
+    for name in sorted(STATIC_ASSETS):
+        try:
+            stat = (APP_DIR / name).stat()
+        except OSError:
+            continue
+        stamps.append((name, stat.st_mtime_ns, stat.st_size))
+    key = tuple(stamps)
+    if _asset_version_cache is not None and _asset_version_cache[0] == key:
+        return _asset_version_cache[1]
+    digest = hashlib.sha256()
+    for name, _, _ in stamps:
+        try:
+            digest.update(name.encode("utf-8"))
+            digest.update((APP_DIR / name).read_bytes())
+        except OSError:
+            continue
+    version = digest.hexdigest()[:12]
+    _asset_version_cache = (key, version)
+    return version
+
+
+def asset_url(name: str, version: str) -> str:
+    return "/__ribbon/" + name + ("?v=" + version if version else "")
+
+
+def inject_html(data: bytes, token: str = "", version: str = "") -> bytes:
     if b"data-ribbon" in data or b"/__ribbon/ribbon.js" in data:
         return data
     attrs = b' data-ribbon="1"'
     if token:
-        attrs += b' data-ribbon-token="' + token.encode("utf-8") + b'"'
+        attrs += b' data-ribbon-token="' + escape(token).encode("utf-8") + b'"'
     inject = (
-        b'<script src="/__ribbon/bar.js" defer></script>'
-        + b'<script src="/__ribbon/ribbon.js"'
+        b"<style>" + VIEW_TRANSITION_CSS.encode("utf-8") + b"</style>"
+        + bar_shell_html()
+        + b'<script src="' + asset_url("bar.js", version).encode("utf-8") + b'" defer></script>'
+        + b'<script src="' + asset_url("ribbon.js", version).encode("utf-8") + b'"'
         + attrs
         + b" defer></script>"
     )
+    heads = list(HEAD_CLOSE_RE.finditer(data))
+    if heads:
+        index = heads[-1].start()
+        data = data[:index] + BOOT_SCRIPT + data[index:]
+    else:
+        inject = BOOT_SCRIPT + inject
+    opening = BODY_OPEN_RE.search(data)
+    if opening:
+        index = opening.end()
+        return data[:index] + inject + data[index:]
     matches = list(BODY_CLOSE_RE.finditer(data))
     if matches:
         index = matches[-1].start()
@@ -2328,27 +2615,20 @@ def public_state(state: dict) -> dict:
     }
 
 
-def apply_signal(state: dict, key: str, signal: str, value: object) -> dict:
+def apply_signal(state: dict, key: str, signal: str) -> dict:
     assets = state.setdefault("assets", {})
     entry = assets.get(key)
     if not isinstance(entry, dict):
         entry = {}
     now = datetime.now(UTC)
-    if signal == "open":
-        try:
-            opens = int(entry.get("opens") or 0)
-        except (TypeError, ValueError):
-            opens = 0
-        entry["opens"] = opens + 1
-        entry["last_opened"] = now.isoformat(timespec="seconds")
-    elif signal == "note":
-        note = str(value or "").strip()
-        if note:
-            entry["note"] = note[:500]
-        else:
-            entry.pop("note", None)
-    else:
+    if signal != "open":
         raise ValueError("unknown signal")
+    try:
+        opens = int(entry.get("opens") or 0)
+    except (TypeError, ValueError):
+        opens = 0
+    entry["opens"] = opens + 1
+    entry["last_opened"] = now.isoformat(timespec="seconds")
     entry["updated"] = now.isoformat(timespec="seconds")
     assets[key] = entry
     return state
@@ -2514,7 +2794,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
         with STATE_LOCK:
             state = load_state(self.root)
             try:
-                apply_signal(state, key, signal, body.get("value"))
+                apply_signal(state, key, signal)
             except ValueError:
                 self._send_json({"ok": False, "error": "Unknown signal."}, 400)
                 return
@@ -2628,7 +2908,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
     def _serve_html(self, target: Path, head: bool) -> None:
         try:
             token = self.token
-            data = inject_html(target.read_bytes(), token)
+            data = inject_html(target.read_bytes(), token, asset_version())
         except OSError:
             self.send_error(404, "File not found")
             return
@@ -2650,6 +2930,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             self.send_error(404, "File not found")
             return
 
+        version = asset_version()
         doc = (
             "<!doctype html>\n"
             '<html lang="en">\n'
@@ -2657,15 +2938,15 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             '<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f"<title>{escape(markdown_title(text, rel))}</title>\n"
-            '<link rel="stylesheet" href="/__ribbon/card.css">\n'
-            '<link rel="stylesheet" href="/__ribbon/markdown.css">\n'
+            f'<link rel="stylesheet" href="{asset_url("card.css", version)}">\n'
+            f'<link rel="stylesheet" href="{asset_url("markdown.css", version)}">\n'
             "</head>\n"
             '<body class="rc-doc-body">\n'
             + markdown_view_html(rel, text)
             + "\n</body>\n"
             "</html>\n"
         ).encode("utf-8")
-        payload = inject_html(doc, self.token)
+        payload = inject_html(doc, self.token, version)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -2704,6 +2985,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             info["mtime"] = 0
         info["tree"] = folder_tree(target)
 
+        version = asset_version()
         data = json.dumps(info, ensure_ascii=False).replace("</", "<\\/")
         doc = (
             "<!doctype html>\n"
@@ -2712,9 +2994,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             '<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f"<title>{escape(info['title'])}</title>\n"
-            '<link rel="stylesheet" href="/__ribbon/card.css">\n'
+            f'<link rel="stylesheet" href="{asset_url("card.css", version)}">\n'
             f"<script>window.__RIBBON_CARD_APP__ = {data};</script>\n"
-            '<script src="/__ribbon/card.js" defer></script>\n'
+            f'<script src="{asset_url("card.js", version)}" defer></script>\n'
             "</head>\n"
             "<body>\n"
             '<div id="ribbon-card"></div>\n'
@@ -2724,7 +3006,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
         embed = info["kind"] == "page" or (
             parse_qs(urlsplit(self.path).query).get("embed") == [ "1" ]
         )
-        payload = doc if embed else inject_html(doc, self.token)
+        payload = doc if embed else inject_html(doc, self.token, version)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -2813,16 +3095,19 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             return
 
         if name in STATIC_ASSETS:
+            # The injected URLs carry asset_version(), so a changed file gets
+            # a new URL. Cache the old one for a year instead of asking the
+            # browser to check back on every page.
             etag = '"' + hashlib.sha256(payload).hexdigest()[:16] + '"'
             if self.headers.get("If-None-Match") == etag:
                 self.send_response(304)
                 self.send_header("ETag", etag)
-                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Cache-Control", "public, max-age=31536000, immutable")
                 self.end_headers()
                 return
             self.send_response(200)
             self.send_header("ETag", etag)
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         else:
             self.send_response(200)
             self.send_header("Cache-Control", "no-store, max-age=0")

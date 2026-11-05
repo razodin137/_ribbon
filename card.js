@@ -164,11 +164,7 @@
     "</li>"
   }
 
-  function hiddenSummary(tree) {
-    if (!tree || !tree.entries) return '<span class="rc-stats">not available</span>'
-    const hidden = tree.entries.filter(function (entry) {
-      return entry.hidden
-    })
+  function hiddenSummary(hidden) {
     const ignored = hidden.filter(function (entry) {
       return entry.ignored
     }).length
@@ -182,34 +178,28 @@
   }
 
   function hiddenSection(tree) {
-    let body
-    if (!tree || !tree.entries) {
-      body = '<p class="rc-note">This snapshot cannot see hidden files or ' +
-        "ignore rules. Start <code>ribbon.py</code> for the full overview.</p>"
-    } else {
-      const hidden = tree.entries.filter(function (entry) {
-        return entry.hidden
-      }).sort(function (a, b) {
-        if (a.name === ".git") return 1
-        if (b.name === ".git") return -1
-        return 0
-      })
-      body = hidden.length
-        ? '<ul class="rc-tree">' + hidden.map(hiddenRow).join("") + "</ul>"
-        : '<p class="rc-empty">No hidden files.</p>'
-    }
+    const hidden = tree.entries.filter(function (entry) {
+      return entry.hidden
+    }).sort(function (a, b) {
+      if (a.name === ".git") return 1
+      if (b.name === ".git") return -1
+      return 0
+    })
+    const body = hidden.length
+      ? '<ul class="rc-tree">' + hidden.map(hiddenRow).join("") + "</ul>"
+      : '<p class="rc-empty">No hidden files.</p>'
 
     return '<section class="rc-hidden">' +
       '<div class="rc-contents-head">' +
         '<span class="rc-contents-title">Hidden</span>' +
-        hiddenSummary(tree) +
+        hiddenSummary(hidden) +
       "</div>" +
       body +
     "</section>"
   }
 
   function sensitiveHtml(tree) {
-    if (!tree || !tree.sensitive || !tree.sensitive.length) return ""
+    if (!tree.sensitive || !tree.sensitive.length) return ""
     const names = tree.sensitive.map(function (name) {
       return esc(name)
     }).join(", ")
@@ -218,7 +208,6 @@
   }
 
   function ignoreHtml(tree) {
-    if (!tree) return ""
     if (!tree.gitignore_present) {
       return '<section class="rc-ignore">' +
         '<div class="rc-contents-head">' +
@@ -260,7 +249,7 @@
         : "A folder in your ribbon, shown here because it has no web page."
     )
     const stats = app.stats
-    const tree = app.tree || null
+    const tree = app.tree
     const run = app.run
       ? '<div class="rc-fact">' +
           "<dt>Run</dt>" +

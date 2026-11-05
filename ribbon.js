@@ -1,6 +1,8 @@
 /* Ribbon — a floating, auto-hiding switcher for a folder of HTML apps.
  *
- * Injected by ribbon.py, after bar.js:
+ * ribbon.py renders the bar shell as declarative shadow DOM at the top of
+ * <body>, then injects these scripts. This file adopts that shadow root and
+ * wires it up:
  *   <script src="/__ribbon/bar.js" defer></script>
  *   <script src="/__ribbon/ribbon.js" defer></script>
  */
@@ -25,55 +27,8 @@
   const CHANNEL_KEY = "ribbon:channel:" + scriptBase
 
   const STORAGE_KEY = "ribbon:hidden"
+  const SCROLL_KEY = "ribbon:scroll"
   const BAR_HEIGHT = 40
-  const BAR_CSS_URL = (function () {
-    try {
-      return new URL("bar.css", scriptBase).href
-    } catch (_) {
-      return "/__ribbon/bar.css"
-    }
-  })()
-  let barStyles
-
-  function loadBarStyles(shadow) {
-    if (!barStyles) {
-      const controller = new AbortController()
-      const timer = window.setTimeout(function () {
-        controller.abort()
-      }, 2000)
-      barStyles = fetch(BAR_CSS_URL, { signal: controller.signal })
-        .then(function (response) {
-          if (!response.ok) throw new Error("bar.css " + response.status)
-          return response.text()
-        })
-        .finally(function () {
-          window.clearTimeout(timer)
-        })
-    }
-    return barStyles.then(function (css) {
-      if (typeof CSSStyleSheet === "function" && "replaceSync" in CSSStyleSheet.prototype) {
-        try {
-          const sheet = new CSSStyleSheet()
-          sheet.replaceSync(css)
-          shadow.adoptedStyleSheets = [ sheet ]
-          return
-        } catch (_) { /* fall through to a style element */ }
-      }
-      const style = document.createElement("style")
-      style.textContent = css
-      shadow.appendChild(style)
-    }).catch(function () {
-      return new Promise(function (resolve) {
-        const link = document.createElement("link")
-        link.rel = "stylesheet"
-        link.href = BAR_CSS_URL
-        link.addEventListener("load", resolve, { once: true })
-        link.addEventListener("error", resolve, { once: true })
-        shadow.appendChild(link)
-        window.setTimeout(resolve, 1500)
-      })
-    })
-  }
 
   function boot() {
     if (document.body) {
@@ -116,7 +71,7 @@
         else update = mount(apps, meta) || null
       })
       .catch(function () {
-        /* No manifest (for example, opened from file://): stay quiet. */
+        /* No manifest: stay quiet. */
       })
   }
 
@@ -136,6 +91,16 @@
     } catch (_) { /* storage may be unavailable */ }
   }
 
+  function shadowRootFor(host) {
+    if (host.shadowRoot) return host.shadowRoot
+    const template = host.querySelector("template[shadowrootmode], template[shadowroot]")
+    if (!template) return null
+    const shadow = host.attachShadow({ mode: "open" })
+    shadow.appendChild(template.content.cloneNode(true))
+    template.remove()
+    return shadow
+  }
+
   function mount(rawApps, meta) {
     meta = meta || {}
     let apps = rawApps.filter(function (app) {
@@ -152,193 +117,9 @@
       "important"
     )
 
-    const host = document.createElement("div")
-    host.setAttribute("data-ribbon-host", "")
-    host.style.cssText = [
-      "position:fixed!important",
-      "top:0!important",
-      "right:0!important",
-      "left:0!important",
-      "width:100%!important",
-      "height:auto!important",
-      "margin:0!important",
-      "padding:0!important",
-      "border:0!important",
-      "background:transparent!important",
-      "z-index:2147483647!important",
-      "display:block!important",
-      "pointer-events:none!important",
-      "isolation:isolate!important"
-    ].join(";")
-
-    const shadow = host.attachShadow({ mode: "open" })
-    host.style.visibility = "hidden"
-    shadow.innerHTML =
-      '<div class="bar" role="navigation" aria-label="App ribbon">' +
-        '<div class="meta">' +
-          '<span class="led-wrap">' +
-            '<span class="leds" role="group" aria-label="Git status" aria-describedby="led-tip">' +
-              '<button class="led-btn" type="button" data-led="repo" aria-label="Repository status"><span class="led off" data-led-dot="repo" aria-hidden="true"></span></button>' +
-              '<button class="led-btn" type="button" data-led="changes" aria-label="Changes status"><span class="led off" data-led-dot="changes" aria-hidden="true"></span></button>' +
-              '<button class="led-btn" type="button" data-led="remote" aria-label="Remote status"><span class="led off" data-led-dot="remote" aria-hidden="true"></span></button>' +
-            "</span>" +
-            '<span class="led-tip" id="led-tip" role="tooltip" aria-hidden="true">' +
-              '<span class="led-tip-row"><span class="led off" data-tip-led="repo" aria-hidden="true"></span><span data-tip-text="repo"></span></span>' +
-              '<span class="led-tip-row"><span class="led off" data-tip-led="changes" aria-hidden="true"></span><span data-tip-text="changes"></span></span>' +
-              '<span class="led-tip-row"><span class="led off" data-tip-led="remote" aria-hidden="true"></span><span data-tip-text="remote"></span></span>' +
-            "</span>" +
-          "</span>" +
-          '<span class="count"></span>' +
-        "</div>" +
-        '<div class="title-wrap">' +
-          '<button class="star-btn title-star" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>' +
-          '<button class="title" type="button" aria-haspopup="dialog" aria-expanded="false" title="Show all apps">' +
-            '<span class="title-text"></span>' +
-            '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>' +
-          "</button>" +
-        "</div>" +
-        '<div class="actions">' +
-          '<button class="btn" type="button" data-act="prev" aria-label="Previous app" title="Previous app — [">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>' +
-            '<span class="label">Back</span>' +
-          "</button>" +
-          '<button class="btn" type="button" data-act="next" aria-label="Next app" title="Next app — ]">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>' +
-            '<span class="label">Next</span>' +
-          "</button>" +
-          '<button class="btn" type="button" data-act="contents" aria-label="Show contents" aria-pressed="false" title="Show contents — C">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' +
-            '<span class="label">Contents</span>' +
-          "</button>" +
-          '<button class="btn" type="button" data-act="drift" aria-label="Drift to another app" title="Drift to another app — R">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 4l3 3-3 3"/><path d="M18 20l3-3-3-3"/><path d="M3 7h3c2 0 3.5 1 4.5 2.5l3 5C14.5 16 16 17 18 17h3"/><path d="M3 17h3c2 0 3.5-1 4.5-2.5l3-5C14.5 8 16 7 18 7h3"/></svg>' +
-            '<span class="label">Drift</span>' +
-          "</button>" +
-          '<button class="btn" type="button" data-act="reload" aria-label="Reload app" title="Reload app — Shift+R">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>' +
-          "</button>" +
-          '<span class="sep" aria-hidden="true"></span>' +
-          '<button class="btn" type="button" data-act="hide" aria-label="Hide ribbon" title="Hide ribbon — H">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>' +
-          "</button>" +
-        "</div>" +
-        '<div class="menu" hidden role="dialog" aria-label="All apps">' +
-          '<div class="menu-top">' +
-            '<div class="menu-current">' +
-              '<span class="menu-current-label">Current app</span>' +
-              '<span class="menu-current-title"></span>' +
-              '<span class="menu-current-meta"></span>' +
-            "</div>" +
-            '<button class="star-btn" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>' +
-          "</div>" +
-          '<div class="menu-current-tools">' +
-            '<span class="menu-current-hint">drift deals from the active channel</span>' +
-          "</div>" +
-          '<div class="menu-channels" role="group" aria-label="Channels"></div>' +
-          '<div class="menu-search">' +
-            '<input class="menu-input" type="search" placeholder="Search apps…" aria-label="Search apps" autocomplete="off" spellcheck="false">' +
-          "</div>" +
-          '<div class="menu-scroll">' +
-            '<div class="menu-section" data-section="favorites" hidden>' +
-              '<div class="menu-heading">Favorites</div>' +
-              '<div class="menu-list" data-list="favorites"></div>' +
-            "</div>" +
-            '<div class="menu-section" data-section="all">' +
-              '<div class="menu-heading">All apps</div>' +
-              '<div class="menu-list" data-list="all"></div>' +
-            "</div>" +
-            '<div class="menu-empty" hidden>No apps match.</div>' +
-          "</div>" +
-        "</div>" +
-      "</div>" +
-      '<div class="card-overlay" hidden>' +
-        '<button class="card-close" type="button" aria-label="Close contents" title="Close contents — Esc">✕ Close</button>' +
-        '<iframe class="card-frame" title="Project contents"></iframe>' +
-      "</div>" +
-      '<button class="peek" type="button" aria-label="Show ribbon" title="Show ribbon — H">' +
-        '<span aria-hidden="true">▤</span><span class="peek-label">ribbon</span>' +
-      "</button>" +
-      '<div class="git-overlay" hidden>' +
-        '<div class="git-dialog" role="dialog" aria-modal="true" aria-labelledby="git-title">' +
-          '<div class="git-head">' +
-            '<div class="git-heading">' +
-              '<div class="git-kicker">Git</div>' +
-              '<div class="git-title" id="git-title"></div>' +
-            "</div>" +
-            '<button class="git-close" type="button" aria-label="Close">✕</button>' +
-          "</div>" +
-          '<div class="git-body">' +
-            '<div class="git-summary"></div>' +
-            '<div class="git-files" hidden></div>' +
-            '<div class="git-warnings" hidden></div>' +
-            '<label class="git-field git-message-field" hidden>' +
-              '<span class="git-label">Commit message</span>' +
-              '<input class="git-input git-message" type="text" maxlength="2000" autocomplete="off">' +
-            "</label>" +
-            '<label class="git-field git-name-field" hidden>' +
-              '<span class="git-label">GitHub repo name</span>' +
-              '<input class="git-input git-name" type="text" maxlength="100" autocomplete="off" spellcheck="false">' +
-            "</label>" +
-            '<div class="git-field git-visibility-field" hidden>' +
-              '<span class="git-label">Visibility</span>' +
-              '<div class="git-radios">' +
-                '<label class="git-radio"><input type="radio" name="git-visibility" value="private" checked> Private</label>' +
-                '<label class="git-radio"><input type="radio" name="git-visibility" value="public"> Public</label>' +
-              "</div>" +
-            "</div>" +
-            '<label class="git-field git-description-field" hidden>' +
-              '<span class="git-label">Description (optional)</span>' +
-              '<input class="git-input git-description" type="text" maxlength="350" autocomplete="off" placeholder="What is this app?">' +
-            "</label>" +
-            '<label class="git-field git-readme-field" hidden>' +
-              '<span class="git-label">README.md</span>' +
-              '<textarea class="git-input git-textarea git-readme" rows="6" maxlength="20000" spellcheck="false" placeholder="Write a short README…"></textarea>' +
-              '<span class="git-hint">No README yet. Ribbon will write this to README.md, commit it, and push it before publishing.</span>' +
-            "</label>" +
-            '<label class="git-check git-pages-field" hidden>' +
-              '<input type="checkbox" class="git-pages">' +
-              "<span>Publish with GitHub Pages and set it as the repo homepage</span>" +
-            "</label>" +
-            '<label class="git-check git-ignore-field" hidden>' +
-              '<input type="checkbox" class="git-ignore" checked>' +
-              "<span>Add a .gitignore for node_modules, .venv, dist…</span>" +
-            "</label>" +
-            '<div class="git-note" hidden></div>' +
-            '<pre class="git-output" hidden></pre>' +
-          "</div>" +
-          '<div class="git-actions">' +
-            '<span class="git-status"></span>' +
-            '<button class="btn git-cancel" type="button">Close</button>' +
-            '<button class="btn git-primary" type="button" hidden></button>' +
-          "</div>" +
-        "</div>" +
-      "</div>" +
-      '<div class="delete-overlay" hidden>' +
-        '<div class="delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-warning">' +
-          '<div class="delete-head">' +
-            '<div class="delete-heading">' +
-              '<div class="delete-kicker">Delete folder</div>' +
-              '<div class="delete-title" id="delete-title"></div>' +
-            "</div>" +
-            '<button class="git-close delete-close" type="button" aria-label="Close">✕</button>' +
-          "</div>" +
-          '<div class="delete-body">' +
-            '<p class="delete-warn" id="delete-warning">This removes the folder and everything inside it. It cannot be undone.</p>' +
-            '<div class="delete-path"></div>' +
-            "<div>" +
-              '<div class="delete-command-label">Command</div>' +
-              '<pre class="delete-command"></pre>' +
-            "</div>" +
-            '<div class="delete-note">Ribbon will run exactly this command, then remove the folder from the list.</div>' +
-            '<pre class="delete-command delete-output" hidden></pre>' +
-          "</div>" +
-          '<div class="delete-actions">' +
-            '<span class="delete-status" role="status" aria-live="polite"></span>' +
-            '<button class="btn delete-cancel" type="button">Cancel</button>' +
-            '<button class="btn delete-primary" type="button" disabled>Delete folder</button>' +
-          "</div>" +
-        "</div>" +
-      "</div>"
+    const host = document.querySelector("[data-ribbon-host]")
+    const shadow = host ? shadowRootFor(host) : null
+    if (!shadow) return
 
     const barEl = shadow.querySelector(".bar")
     const countEl = shadow.querySelector(".count")
@@ -544,6 +325,29 @@
       beforeMenu: renderChannels
     })
 
+    // Tell the browser about the pages Back and Next would open, so a click
+    // is a swap rather than a fresh load. The rules live in the page, not
+    // the shadow root, and are replaced whenever the list changes.
+    let speculationJson = ""
+    function applySpeculation() {
+      const urls = bar.neighborUrls(apps, index)
+      const json = urls.length
+        ? JSON.stringify({
+          prerender: [ { source: "list", urls: urls, eagerness: "immediate" } ]
+        })
+        : ""
+      if (json === speculationJson) return
+      speculationJson = json
+      const old = document.getElementById("ribbon-speculation")
+      if (old) old.remove()
+      if (!json) return
+      const script = document.createElement("script")
+      script.type = "speculationrules"
+      script.id = "ribbon-speculation"
+      script.textContent = json
+      ;(document.head || document.documentElement).appendChild(script)
+    }
+
     function applyApps() {
       const current = locate()
       index = current.index
@@ -574,11 +378,12 @@
         ui.renderMenu(searchInput.value)
       }
       if (window.__ribbon) window.__ribbon.apps = apps
+      applySpeculation()
     }
 
     applyApps()
     let manualHidden = readHidden()
-    let autoHidden = false
+    let autoHidden = manualHidden ? false : readScrolled()
     let topOffset = false
     let savedPaddingTop = null
     const lastTargets = new Map()
@@ -644,6 +449,7 @@
       manualHidden = hidden
       if (hidden) autoHidden = false
       else lastTargets.clear()
+      writeScrolled(autoHidden)
       setTopOffset(!hidden, true)
       try {
         sessionStorage.setItem(STORAGE_KEY, hidden ? "1" : "0")
@@ -947,19 +753,21 @@
       })
     }
 
-    function signal(name, value) {
+    function recordOpen() {
+      // A prerendered page is not a visit. Count it when the reader lands.
+      if (document.prerendering) {
+        document.addEventListener("prerenderingchange", function () {
+          recordOpen()
+        }, { once: true })
+        return
+      }
       const app = ui.currentApp()
       if (!app) return
       const key = bar.appKey(app)
       const entry = Object.assign({}, signals[key] || {})
       const now = new Date()
-      if (name === "open") {
-        entry.opens = (Number(entry.opens) || 0) + 1
-        entry.last_opened = now.toISOString()
-      } else if (name === "note") {
-        if (value) entry.note = String(value).slice(0, 500)
-        else delete entry.note
-      }
+      entry.opens = (Number(entry.opens) || 0) + 1
+      entry.last_opened = now.toISOString()
       entry.updated = now.toISOString()
       signals[key] = entry
       ui.updateCurrentMeta()
@@ -974,7 +782,7 @@
           "Content-Type": "application/json",
           "X-Ribbon-Token": ribbonToken
         },
-        body: JSON.stringify({ path: key, signal: name, value: value })
+        body: JSON.stringify({ path: key, signal: "open" })
       })
         .then(function (response) {
           return response.json()
@@ -988,7 +796,7 @@
             ui.renderMenu(searchInput.value)
           }
         })
-        .catch(function () { /* the local signal stands */ })
+        .catch(function () { /* the local record stands */ })
     }
 
     function buildChannels() {
@@ -1295,6 +1103,7 @@
       else if (delta < 0) autoHidden = false
 
       lastTargets.set(target, y)
+      if (!target) writeScrolled(autoHidden)
       applyState()
     }
 
@@ -1378,6 +1187,7 @@
     function toggleHidden() {
       if (!manualHidden && autoHidden) {
         autoHidden = false
+        writeScrolled(false)
         applyState()
         return
       }
@@ -1420,19 +1230,18 @@
       applyApps()
       if (!openedRecorded) {
         openedRecorded = true
-        if (ui.currentApp()) signal("open", true)
+        if (ui.currentApp()) recordOpen()
       }
     }
 
     setTopOffset(!manualHidden, false)
     applyState()
-    document.documentElement.appendChild(host)
-    loadBarStyles(shadow).then(function () {
-      host.style.visibility = ""
-    })
+    // The head script hid the shell before this file ran. From here the
+    // is-gone/is-shown classes own the state.
+    document.documentElement.classList.remove("ribbon-hidden", "ribbon-scrolled")
     if (!openedRecorded) {
       openedRecorded = true
-      if (ui.currentApp()) signal("open", true)
+      if (ui.currentApp()) recordOpen()
     }
     return update
   }
@@ -1463,6 +1272,23 @@
     } catch (_) {
       return false
     }
+  }
+
+  // The scroll-hidden state belongs to one page, unlike the manual hide. Store
+  // the page it belongs to so a new app opens with the bar visible.
+  function readScrolled() {
+    try {
+      return sessionStorage.getItem(SCROLL_KEY) === location.href
+    } catch (_) {
+      return false
+    }
+  }
+
+  function writeScrolled(hidden) {
+    try {
+      if (hidden) sessionStorage.setItem(SCROLL_KEY, location.href)
+      else sessionStorage.removeItem(SCROLL_KEY)
+    } catch (_) { /* storage may be unavailable */ }
   }
 
   function readChannel() {

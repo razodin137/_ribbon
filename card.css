@@ -456,14 +456,6 @@ body {
   line-height: 1.55;
 }
 
-.rc-note {
-  margin: 10px 0 0;
-  color: var(--rc-muted);
-  font-family: var(--rc-font-body);
-  font-size: 11.5px;
-  line-height: 1.55;
-}
-
 .rc-ignore {
   margin-top: 18px;
 }
@@ -485,8 +477,7 @@ body {
 
 .rc-foot code,
 .rc-desc code,
-.rc-warn code,
-.rc-note code {
+.rc-warn code {
   padding: 1px 4px;
   border: 1px solid var(--rc-rule);
   border-radius: 2px;

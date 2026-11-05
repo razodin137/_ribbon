@@ -15,7 +15,7 @@ const bar = sandbox.window.__RIBBON_BAR__
 
 test("exposes the pure layer", () => {
   const names = [
-    "appKey", "pad", "matchesQuery", "escapeAttribute", "defaultRepoName",
+    "appKey", "neighborUrls", "pad", "matchesQuery", "defaultRepoName",
     "gitLights", "gitWorkRank", "decideGitAction", "repoTip", "changesTip",
     "remoteTip"
   ]
@@ -29,6 +29,17 @@ test("appKey prefers dir, then path, then url", () => {
   assert.equal(bar.appKey({ path: "p", url: "u" }), "p")
   assert.equal(bar.appKey({ url: "u" }), "u")
   assert.equal(bar.appKey(null), "")
+})
+
+test("neighborUrls gives the Back and Next targets, wrapping around", () => {
+  const apps = [ { url: "/a/" }, { url: "/b/" }, { url: "/c/" } ]
+  const urls = (list, index) => [ ...bar.neighborUrls(list, index) ]
+  assert.deepEqual(urls(apps, 1), [ "/a/", "/c/" ])
+  assert.deepEqual(urls(apps, 0), [ "/c/", "/b/" ])
+  assert.deepEqual(urls([ { url: "/a/" }, { url: "/b/" } ], 0), [ "/b/" ])
+  assert.deepEqual(urls(apps, -1), [ "/c/", "/a/" ])
+  assert.deepEqual(urls([ { url: "/a/" } ], 0), [])
+  assert.deepEqual(urls(null, 0), [])
 })
 
 test("pad matches the width of the total", () => {
@@ -46,14 +57,6 @@ test("matchesQuery searches title, path, and type", () => {
   assert.equal(bar.matchesQuery(app, "html"), true)
   assert.equal(bar.matchesQuery(app, "zzz"), false)
   assert.equal(bar.matchesQuery(app, ""), true)
-})
-
-test("escapeAttribute neutralises markup", () => {
-  assert.equal(
-    bar.escapeAttribute("<a href=\"x\">&'"),
-    "&lt;a href=&quot;x&quot;&gt;&amp;&#39;"
-  )
-  assert.equal(bar.escapeAttribute(null), "")
 })
 
 test("defaultRepoName strips the date and extension, then slugs", () => {

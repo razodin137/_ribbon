@@ -74,9 +74,11 @@ finished page for you.
 | `↻` | Reloads the project you are looking at | `Shift+R` |
 | `✕` | Hides the bar | `H` |
 
-Back and Next wrap around. The bar also hides when you scroll down. It comes
-back when you scroll up. When it is hidden, a small **RIBBON** tab waits in
-the top right corner. Click it, or press **H**, to bring the bar back.
+Back and Next wrap around. Ribbon asks the browser to prepare the projects on
+either side of the one you are reading, so those two clicks open almost
+instantly. The bar also hides when you scroll down. It comes back when you
+scroll up. When it is hidden, a small **RIBBON** tab waits in the top right
+corner. Click it, or press **H**, to bring the bar back.
 
 Ribbon does not change your project pages. It adds the bar only while it
 sends a page to your browser.
@@ -280,8 +282,8 @@ small helpers in `bar.js`. They also fail if a function that belongs in
 
 ```
 _ribbon/
-  ribbon.py     finds the projects, serves them, and saves state
-  ribbon.js     the bar on the server
+  ribbon.py     finds the projects, serves them, and paints the bar shell
+  ribbon.js     adopts the server-rendered bar shadow root and drives it
   bar.js        shared bar code: helpers and createBar
   card.js       the contents card
   bar.css       the look of the bar
@@ -291,8 +293,9 @@ _ribbon/
   package.json  the code-check commands
 ```
 
-The bar has one source of truth. New bar features go in `bar.js`, not in
-`ribbon.js`.
+The bar has one source of truth. The static shell lives in `ribbon.py`, because
+it is rendered into the page before any script runs. Its behavior lives in
+`bar.js`; new bar features go there, not in `ribbon.js`.
 
 ## If something goes wrong
 

@@ -50,7 +50,9 @@
   z-index: 10;
 }
 
-.bar.is-gone {
+.bar.is-gone,
+:host-context(html.ribbon-hidden) .bar,
+:host-context(html.ribbon-scrolled) .bar {
   transform: translateY(calc(-100% - 2px));
   opacity: 0;
   pointer-events: none;
@@ -274,14 +276,8 @@
   color: var(--muted);
 }
 
-.menu-current-tools {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 12px 9px;
-}
 .menu-current-hint {
-  flex: 1 1 auto;
+  padding: 0 12px 9px;
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
@@ -988,93 +984,15 @@
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
-.peek.is-shown { opacity: .42; visibility: visible; transform: none; pointer-events: auto; }
+.peek.is-shown,
+:host-context(html.ribbon-hidden) .peek {
+  opacity: .42;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+}
 .peek.is-shown:hover, .peek.is-shown:focus-visible { opacity: 1; }
 .peek:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-html, body {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  overflow: hidden;
-  background: #101210;
-  color: var(--ink);
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 13px;
-  line-height: 1;
-  -webkit-font-smoothing: antialiased;
-}
-
-html.is-hidden .bar {
-  transform: translateY(calc(-100% - 1px));
-  opacity: 0;
-  pointer-events: none;
-}
-
-#app {
-  position: fixed;
-  top: var(--bar-h);
-  left: 0;
-  display: block;
-  width: 100%;
-  height: calc(100vh - var(--bar-h));
-  height: calc(100dvh - var(--bar-h));
-  border: 0;
-  background: #f7f3ea;
-}
-
-#app[hidden] { display: none; }
-
-html.is-hidden #app {
-  top: 0;
-  height: 100vh;
-  height: 100dvh;
-}
-
-html.is-hidden .empty { inset: 0 0 0 0; }
-
-.empty {
-  position: fixed;
-  inset: var(--bar-h) 0 0 0;
-  display: grid;
-  place-items: center;
-  padding: 32px;
-  background: #f7f3ea;
-  color: #23251f;
-}
-
-.empty[hidden] { display: none; }
-
-.empty-inner { width: min(100%, 520px); }
-
-.empty h1 {
-  margin: 0 0 14px;
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -.02em;
-}
-
-.empty p {
-  margin: 0 0 12px;
-  font-size: 15px;
-  line-height: 1.55;
-  color: #5f6157;
-}
-
-.empty code {
-  display: block;
-  padding: 12px 14px;
-  border: 1px solid #ded6c6;
-  border-radius: 8px;
-  background: #fffdf8;
-  color: #23251f;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-  overflow-x: auto;
-}
 
 .git-note[hidden] { display: none; }
 

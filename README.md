@@ -19,6 +19,10 @@ web addresses.
 
 You do not need to install anything else to use Ribbon.
 
+Ribbon is one file. `ribbon.py` carries its own copy of the bar's JavaScript
+and CSS, so you can copy that file anywhere and run it. Nothing else has to
+sit beside it.
+
 ## Start Ribbon
 
 1. Open a terminal.
@@ -258,6 +262,7 @@ python3 /path/to/_ribbon/ribbon.py --no-open       # do not open a browser
 python3 /path/to/_ribbon/ribbon.py --include-untitled
 python3 /path/to/_ribbon/ribbon.py --no-git-actions # lights only, no buttons
 python3 /path/to/_ribbon/ribbon.py --verbose       # show every request
+python3 /path/to/_ribbon/ribbon.py --dev           # read JS/CSS from disk
 python3 /path/to/_ribbon/ribbon.py --help          # all options
 ```
 
@@ -275,15 +280,30 @@ npm install
 npm run check
 ```
 
-`npm run check` runs ESLint, Stylelint, and the tests. The tests check the
-small helpers in `bar.js`. They also fail if a function that belongs in
+`npm run check` runs ESLint, Stylelint, and the tests. It also checks that
+the embedded copies in `ribbon.py` match the files on disk. The tests check
+the small helpers in `bar.js`. They also fail if a function that belongs in
 `bar.js` is written again in `ribbon.js`.
+
+Ribbon ships with the JavaScript and CSS embedded in `ribbon.py`. If you edit
+any of those browser files, rebuild the embedded copy:
+
+```bash
+python3 build.py           # embed the current JS and CSS
+python3 build.py --check   # fail if the embedded copy is stale
+```
+
+While you are working on the bar, skip the rebuild and run
+`python3 ribbon.py --dev`. That reads the JS and CSS from disk, so every
+reload shows your edit. Use the normal command when you want to check what
+the embedded release will serve.
 
 ## The files
 
 ```
 _ribbon/
   ribbon.py     finds the projects, serves them, and paints the bar shell
+  build.py      embeds the browser files into ribbon.py
   ribbon.js     adopts the server-rendered bar shadow root and drives it
   bar.js        shared bar code: helpers and createBar
   card.js       the contents card
@@ -293,6 +313,10 @@ _ribbon/
   test/         tests for the shared bar code
   package.json  the code-check commands
 ```
+
+The browser files are the source. `build.py` compresses them and writes the
+result into `ribbon.py`, which is why the release copy works on its own.
+Run it after every change to those files, or use `--dev` while editing.
 
 The bar has one source of truth. The static shell lives in `ribbon.py`, because
 it is rendered into the page before any script runs. Its behavior lives in

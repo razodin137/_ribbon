@@ -4,9 +4,11 @@
   "type": "module",
   "description": "A little bar that wraps around your vibe-coded projects, helps you surface them, and shows how far along they are.",
   "scripts": {
+    "build": "python3 build.py",
     "lint": "eslint . && stylelint \"bar.css\" \"card.css\" \"markdown.css\"",
     "test": "node --test",
-    "check": "npm run lint && npm test"
+    "check:assets": "python3 build.py --check",
+    "check": "npm run lint && npm test && npm run check:assets"
   },
   "devDependencies": {
     "@37signals/eslint-config": "file:/home/mrjohn/Work/tries/2026-11-03-house-style/house-style/eslint-config",

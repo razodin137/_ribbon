@@ -13,6 +13,7 @@ const read = (name) => readFileSync(join(root, name), "utf8")
 
 const ribbonPy = read("ribbon.py")
 const assetsPy = read("assets.py")
+const injectPy = read("inject.py")
 const shellPy = read("shell.py")
 const configPy = read("config.py")
 const ribbonJs = read("ribbon.js")
@@ -23,7 +24,7 @@ test("the page reserves the bar's height before any script runs", () => {
   assert.match(shellPy, /html::before/)
   assert.match(shellPy, /height:\{BAR_HEIGHT\}px/)
   assert.match(
-    ribbonPy,
+    injectPy,
     /VIEW_TRANSITION_CSS\.encode\("utf-8"\)\s*\+\s*PAGE_OFFSET_CSS\.encode\("utf-8"\)/
   )
 })

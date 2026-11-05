@@ -12,10 +12,11 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const read = (name) => readFileSync(join(root, name), "utf8")
 
 const ribbonPy = read("ribbon.py")
+const configPy = read("config.py")
 const ribbonJs = read("ribbon.js")
 
 test("the page reserves the bar's height before any script runs", () => {
-  assert.match(ribbonPy, /^BAR_HEIGHT = 40$/m)
+  assert.match(configPy, /^BAR_HEIGHT = 40$/m)
   assert.match(ribbonPy, /PAGE_OFFSET_CSS = \(/)
   assert.match(ribbonPy, /html::before/)
   assert.match(ribbonPy, /height:\{BAR_HEIGHT\}px/)

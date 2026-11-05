@@ -8,24 +8,40 @@ import { fileURLToPath } from "node:url"
 // storage keys. The two halves have to agree or the bar flashes visible on
 // every load, so pin them together here.
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const ribbonJs = readFileSync(join(root, "ribbon.js"), "utf8")
-const ribbonPy = readFileSync(join(root, "ribbon.py"), "utf8")
 
-function jsConstant(name) {
+function jsConstant(ribbonJs, name) {
   const match = ribbonJs.match(new RegExp("const " + name + ' = "([^"]+)"'))
   assert.ok(match, name + " is missing from ribbon.js")
   return match[1]
 }
 
-const storageKey = jsConstant("STORAGE_KEY")
-const scrollKey = jsConstant("SCROLL_KEY")
+function readContract() {
+  const ribbonJs = readFileSync(join(root, "ribbon.js"), "utf8")
+  const ribbonPy = readFileSync(join(root, "ribbon.py"), "utf8")
 
-const start = ribbonPy.indexOf("BOOT_SCRIPT = (")
-const end = ribbonPy.indexOf("\n)\n", start)
-assert.ok(start >= 0 && end > start, "BOOT_SCRIPT is missing from ribbon.py")
-const boot = ribbonPy.slice(start, end)
+  const start = ribbonPy.indexOf("BOOT_SCRIPT = (")
+  const end = ribbonPy.indexOf("\n)\n", start)
+  assert.ok(start >= 0 && end > start, "BOOT_SCRIPT is missing from ribbon.py")
+
+  return {
+    ribbonJs: ribbonJs,
+    storageKey: jsConstant(ribbonJs, "STORAGE_KEY"),
+    scrollKey: jsConstant(ribbonJs, "SCROLL_KEY"),
+    boot: ribbonPy.slice(start, end)
+  }
+}
+
+// Read lazily inside the tests: a broken source file should fail a test, not
+// crash the file before node:test gets a chance to report it.
+let contract
+
+function readOnce() {
+  if (!contract) contract = readContract()
+  return contract
+}
 
 test("the boot script reads the hidden key ribbon.js writes", () => {
+  const { boot, storageKey } = readOnce()
   assert.ok(
     boot.includes('sessionStorage.getItem("' + storageKey + '")'),
     "BOOT_SCRIPT does not read " + storageKey
@@ -33,6 +49,7 @@ test("the boot script reads the hidden key ribbon.js writes", () => {
 })
 
 test("the boot script tests for the value ribbon.js writes", () => {
+  const { ribbonJs, boot, storageKey } = readOnce()
   const match = ribbonJs.match(
     /setItem\(STORAGE_KEY,\s*hidden\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"\)/
   )
@@ -44,6 +61,7 @@ test("the boot script tests for the value ribbon.js writes", () => {
 })
 
 test("the boot script compares the scroll key to the same location", () => {
+  const { ribbonJs, boot, scrollKey } = readOnce()
   assert.match(ribbonJs, /sessionStorage\.setItem\(SCROLL_KEY, location\.href\)/)
   assert.ok(
     boot.includes('getItem("' + scrollKey + '")===location.href'),

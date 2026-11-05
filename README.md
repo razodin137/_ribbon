@@ -17,11 +17,11 @@ web addresses.
 - Git and the GitHub CLI are optional. You only need them for the Git
   buttons.
 
-You do not need to install anything else to use Ribbon.
+You do not need to install anything else.
 
-Ribbon is one file. `ribbon.py` carries its own copy of the bar's JavaScript
-and CSS, so you can copy that file anywhere and run it. Nothing else has to
-sit beside it.
+Ribbon is a small Python program. `ribbon.py` runs it and holds its own copy of
+the bar's JavaScript and CSS. A few Python files sit next to it, so keep them
+together in one folder when you copy Ribbon somewhere else.
 
 ## Start Ribbon
 
@@ -36,14 +36,15 @@ python3 /path/to/_ribbon/ribbon.py
 4. Keep the terminal window open while you use Ribbon.
 5. When you are done, click the terminal and press **Ctrl+C**.
 
-If you are already inside the `_ribbon` folder, this is enough:
+If you are already in the `_ribbon` folder, this is enough:
 
 ```bash
 python3 ribbon.py
 ```
 
-Ribbon looks for project folders near its own folder. If one folder holds
-all your projects, it looks inside that folder. If it picks the wrong place,
+Ribbon looks for project folders near its own folder. If one folder holds all
+your projects, it looks inside that folder. It will not guess your home folder
+or a system folder. If it cannot find a safe place, or picks the wrong one,
 tell it where to look:
 
 ```bash
@@ -78,13 +79,14 @@ finished page for you.
 | `↻` | Reloads the project you are looking at | `Shift+R` |
 | `✕` | Hides the bar | `H` |
 
-Back and Next wrap around. Ribbon asks the browser to prepare the projects on
-either side of the one you are reading, so those two clicks open almost
-instantly. When you move between projects, the bar stays put and only the page
-content cross-fades. Browsers without cross-document view transitions simply
-replace the page. The bar also hides when you scroll down. It comes back when
-you scroll up. When it is hidden, a small **RIBBON** tab waits in the top right
-corner. Click it, or press **H**, to bring the bar back.
+Back and Next wrap around. Ribbon asks the browser to get the projects on
+either side ready. Those two clicks then open almost at once. When you move
+between projects, the bar stays put. Only the page content cross-fades. Older
+browsers just replace the page instead.
+
+The bar also hides when you scroll down. It comes back when you scroll up.
+When it is hidden, a small **RIBBON** tab waits in the top right corner. Click
+it, or press **H**, to bring the bar back.
 
 Ribbon does not change your project pages. It adds the bar only while it
 sends a page to your browser.
@@ -151,12 +153,13 @@ Git is a tool that saves old versions of your work. A **repository** (or
 | Middle | Green: nothing new to save. Yellow: there are unsaved changes. | Save the changes with a commit. |
 | Right | Green: backed up. Yellow: not pushed. Red: commits are waiting. Dark: no remote. | Push, make a remote, or publish to GitHub Pages. |
 
-Hover over a light to read what is going on. The menu shows the same lights
-next to every app, so you can scan the whole list.
+Hover over a light to read what is going on. On a phone, tap a light once to
+read the same message, then tap it again to open the Git panel. The menu shows
+the same lights next to every app, so you can scan the whole list.
 
-Clicking a light opens a small panel. It shows the repo folder, branch,
-changed files, and any warnings. Nothing happens until you press the button
-in that panel.
+Clicking a light on a computer, or tapping it twice on a phone, opens a small
+panel. It shows the repo folder, branch, changed files, and any warnings.
+Nothing happens until you press the button in that panel.
 
 - **Create a repository** makes `.git`, adds a starter `.gitignore`, and
   makes the first commit.
@@ -252,6 +255,35 @@ The file remembers which projects you opened and when. Delete the file to
 reset Drift. Nothing is written inside your projects unless you press a Git
 or delete button.
 
+## Keep your projects safe
+
+Ribbon serves every project from the same address. The bar's key sits in each
+page, so a script in one project can read the key and press the bar's buttons.
+That means any project you add can delete or change the other projects.
+
+Only put projects you trust in the folder. Do not serve a project you found
+online, a page from someone else, or an app that runs code you have not read.
+
+Ribbon is for your own computer. Keep it on `127.0.0.1` or `localhost`. Do not
+use `--host` on a network you do not control.
+
+`--host 0.0.0.0` (or any address other than `127.0.0.1`, `localhost`, or
+`::1`) lets other devices read your projects. There is no password. Anyone who
+can reach that address can open every page, the app list, and the Git status,
+and can read the files Ribbon serves. Ribbon prints a warning when it starts
+this way. Git buttons, delete, and saved state stay off, but reading is still
+open. Only use it on a network you trust.
+
+The key and the address check stop other websites from pressing the buttons.
+They do not stop code that Ribbon itself serves. That code is already inside.
+Use `--no-git-actions` when you want to look without any buttons that change
+files.
+
+Ribbon does not serve a file or folder whose name starts with a dot. That keeps
+`.git` and `.env` out of the browser. The contents card still lists them, so you
+can spot a secret before a commit. A link inside a project that points outside
+your projects folder is not served either.
+
 ## All the commands
 
 ```bash
@@ -260,6 +292,7 @@ python3 /path/to/_ribbon/ribbon.py --list          # show the folders and quit
 python3 /path/to/_ribbon/ribbon.py --app 3         # start on folder number 3
 python3 /path/to/_ribbon/ribbon.py --root ~/sites  # use a different folder
 python3 /path/to/_ribbon/ribbon.py --port 9000     # use a different port
+python3 /path/to/_ribbon/ribbon.py --host 0.0.0.0 # let the network read (no password)
 python3 /path/to/_ribbon/ribbon.py --no-open       # do not open a browser
 python3 /path/to/_ribbon/ribbon.py --include-untitled
 python3 /path/to/_ribbon/ribbon.py --no-git-actions # lights only, no buttons
@@ -283,26 +316,27 @@ npm run check
 ```
 
 `npm run check` runs ESLint, Stylelint, and the tests. It also checks that
-the embedded copies in `ribbon.py` match the files on disk. The tests check
-the small helpers in `bar.js`. They also fail if a function that belongs in
+the copy inside `ribbon.py` matches the files on disk. The tests check the
+small helpers in `bar.js`. They also fail if a function that belongs in
 `bar.js` is written again in `ribbon.js`, or if a selector in `ribbon.js` does
 not exist in the bar markup.
 
-Ribbon ships with the JavaScript and CSS embedded in `ribbon.py`. If you edit
-any of those browser files, rebuild the embedded copy:
+Ribbon ships with the JavaScript and CSS inside `ribbon.py`. If you edit one
+of those browser files, rebuild the copy:
 
 ```bash
 python3 build.py           # embed the current JS and CSS
-python3 build.py --check   # fail if the embedded copy is stale
+python3 build.py --check   # fail if the copy is stale
 ```
 
-Both forms also refuse a CSS asset that contains `</style`. The bar pastes
-`bar.css` straight into a `<style>` tag, so that sequence would close it early.
+Both forms refuse a CSS file that contains `</style`. The bar pastes
+`bar.css` straight into a `<style>` tag, so that text would close the tag
+early.
 
-While you are working on the bar, skip the rebuild and run
+While you work on the bar, you can skip the rebuild. Run
 `python3 ribbon.py --dev`. That reads the JS and CSS from disk, so every
 reload shows your edit. Use the normal command when you want to check what
-the embedded release will serve.
+the release copy will serve.
 
 ## The files
 
@@ -317,50 +351,45 @@ _ribbon/
   card.css      the look of the contents card
   markdown.css  the look of a Markdown document
   test/         tests for the shared bar code
+  AGENTS.md     notes for agents and people who work on the code
   package.json  the code-check commands
 ```
 
 The browser files are the source. `build.py` compresses them and writes the
-result into `ribbon.py`, which is why the release copy works on its own.
-Run it after every change to those files, or use `--dev` while editing.
+result into `ribbon.py`, which is why the release copy works on its own. Run
+it after every change to those files, or use `--dev` while editing.
 
 The bar has two halves, and both have to change together. The static shell is
 `BAR_MARKUP` in `ribbon.py`, because it is rendered into the page before any
-script runs. Its behavior is `bar.js`; new bar features go there, not in
+script runs. Its behavior is `bar.js`. New bar features go there, not in
 `ribbon.js`. A new button means adding its markup to `BAR_MARKUP` in
 `ribbon.py` and its behavior to `bar.js`.
 
 ## Known limitations
 
-The bar arrives as an inline boot script and an inline `<style>` block. If a
-page sets its own `Content-Security-Policy` in a `<meta>` tag and that policy
-blocks inline code, the browser drops both and the page appears without the
-bar. Ribbon does not read the page's policy and does not attach a nonce or a
-hash, so a strict policy cannot authorize the bar. A policy that allows
-`'unsafe-inline'` and has no nonce or hash lets it through; otherwise relax or
+The bar arrives as an inline boot script and an inline `<style>` block. A page
+can set its own `Content-Security-Policy` in a `<meta>` tag. If that policy
+blocks inline code, the browser drops both. The page then opens without the
+bar. Ribbon does not read the page's policy, and it does not add a nonce or a
+hash. So a strict policy cannot allow the bar. A policy that allows
+`'unsafe-inline'` and has no nonce or hash lets it through. Otherwise, relax or
 remove the policy while you use Ribbon.
 
 The contents card and the Markdown view are built by Ribbon, so they do not
 have this problem.
 
-Ribbon puts its bar at the top of `<body>`, before the page's own content, so
-the bar is there at first paint and cannot pop in. That position has a cost:
-positional selectors see Ribbon's nodes first. `body > :first-child` matches
-the injected `<style>`, and rules built on it (`body > :first-child + *`, for
-example) skip past the rest of Ribbon's markup. A page that styles its own
-first child by position should give that element a class instead.
+Ribbon puts its bar at the top of `<body>`, before the page's own content. So
+the bar is there at first paint and cannot pop in. That spot has a cost.
+Selectors that use position see Ribbon's nodes first. `body > :first-child`
+matches the injected `<style>`. Rules such as `body > :first-child + *` then
+skip past the rest of Ribbon's markup. If a page styles its first child by
+position, give that element a class instead.
 
-Ribbon decides whether a page already has the bar by looking for the text
-`data-ribbon-host` or `/__ribbon/ribbon.js` anywhere in the page. That is a
-plain text match, not a look at the page's tags. A page that only mentions
-either string in its own content — a document about Ribbon, a code sample, or
-a page saved from Ribbon before — is treated as already having the bar and is
-sent unchanged. The bar then does not appear. This is the safe direction: the
-match is how Ribbon avoids adding a second bar to a page that already has one,
-and both strings are specific enough that ordinary pages do not contain them.
-The test reads the whole document, including visible body text, so a matching
-page loses the bar until the mention goes away. A saved page also keeps the
-asset URLs it was saved with, because Ribbon passes it through untouched.
+Ribbon checks the page text for `data-ribbon-host` and
+`/__ribbon/ribbon.js` to decide if the bar is already there. A page that only
+talks about Ribbon can contain one of those strings. Ribbon then treats it as
+a page that already has the bar, and does not add one. This is rare. The check
+is plain text, so it also reads the page's visible words.
 
 ## If something goes wrong
 
@@ -369,8 +398,9 @@ asset URLs it was saved with, because Ribbon passes it through untouched.
 | It says **No folders found** | Your pages may have no `<title>`. Try `--include-untitled`, or use `--root` to pick the right folder. |
 | The bar disappeared | Press **H**, or click the small **RIBBON** tab in the top right. |
 | The bar is missing on one page | That page's `Content-Security-Policy` may block inline code. See [Known limitations](#known-limitations). |
-| The bar is missing on a page that mentions Ribbon | The page contains `data-ribbon-host` or `/__ribbon/ribbon.js` as text. Ribbon reads that as a page that already has the bar. See [Known limitations](#known-limitations). |
+| The bar is missing on a page that talks about Ribbon | The page contains `data-ribbon-host` or `/__ribbon/ribbon.js` as text. Ribbon thinks the page already has the bar. See [Known limitations](#known-limitations). |
 | It shows the wrong folder | Add `--root ~/the/folder/you/want`. |
+| It asks you to use `--root` | Ribbon could not find a safe folder near itself. Add `--root ~/the/folder/you/want`. |
 | The address is already in use | Ribbon tries the next port by itself. Read the address it prints. |
 | The Git buttons are greyed out | Start Ribbon on `127.0.0.1` or `localhost`, and do not use `--no-git-actions`. |
 | **Create a remote** fails | Run `gh auth login`. Check that the repo name is not already taken. |

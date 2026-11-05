@@ -27,6 +27,7 @@ import re
 import secrets
 import shlex
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -41,6 +42,52 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
 from urllib.parse import parse_qs, quote, unquote, urlsplit
+
+from git_repo import (
+    DEFAULT_GITIGNORE,
+    GIT_CACHE,
+    GIT_CACHE_SECONDS,
+    GIT_ENV_STRIP,
+    GIT_LIGHT_SECONDS,
+    GIT_LOCKS,
+    GIT_STATUS_LOCKS,
+    GIT_STATUS_WORKERS,
+    GITIGNORE_PREVIEW_CHARS,
+    LARGE_FILE_BYTES,
+    MAX_ACTION_OUTPUT,
+    MAX_DETAIL_FILES,
+    SCRATCH_DIRS,
+    SECRET_NAMES,
+    SECRET_SUFFIXES,
+    _LockPool,
+    _PooledLock,
+    _action_error,
+    _action_ok,
+    _git,
+    _git_env,
+    _git_ignored,
+    _git_in_head,
+    _git_status_lock,
+    _git_text,
+    _git_tracked,
+    _index_case_mismatch,
+    _plain_gitignore_covers,
+    _repo_root,
+    file_warnings,
+    find_scratch_dirs,
+    git_detail,
+    git_status,
+    gitignore_requirement,
+    list_folder_files,
+    pages_detail,
+    pages_requirement,
+    pages_state,
+    parse_status_files,
+    read_git_status,
+    repo_lock,
+    scratch_warnings,
+)
+from markdown_render import markdown_view_html
 
 APP_DIR = Path(__file__).resolve().parent
 VERSION = "1.4.0"
@@ -72,7 +119,11 @@ MAX_README_CHARS = 20000
 STATE_VERSION = 1
 STATE_DIR_NAME = "ribbon"
 STATE_LOCK = threading.Lock()
-KEEPALIVE_TIMEOUT = 60
+HANDLER_TIMEOUT = 60
+# Below this size a gzip header costs more than the bytes it saves.
+GZIP_MIN_BYTES = 512
+# One source for the bar's height: the page offset and ribbon.js both read it.
+BAR_HEIGHT = 40
 
 STATE_LABELS = {
     "clean": "all pushed",
@@ -88,47 +139,7 @@ STATE_LABELS = {
     "error": "git unavailable",
 }
 
-DEFAULT_GITIGNORE = """\
-node_modules/
-.venv/
-venv/
-env/
-__pycache__/
-.cache/
-.next/
-.turbo/
-.parcel-cache/
-.scratch/
-.DS_Store
-dist/
-build/
-out/
-target/
-coverage/
-*.log
-.env
-.env.*
-!.env.example
-"""
-
-SCRATCH_DIRS = (".scratch",)
-
-SECRET_NAMES = {
-    ".env",
-    ".npmrc",
-    ".pypirc",
-    ".netrc",
-    "id_rsa",
-    "id_ed25519",
-    "credentials",
-    "credentials.json",
-}
-SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
-LARGE_FILE_BYTES = 5 * 1024 * 1024
-MAX_ACTION_OUTPUT = 4000
-MAX_DETAIL_FILES = 200
 TREE_MAX_ENTRIES = 700
-GITIGNORE_PREVIEW_CHARS = 4000
 
 SKIP_DIRS = {
     "node_modules",
@@ -181,24 +192,77 @@ def is_container(path: Path) -> bool:
     return bool(child_dirs(path))
 
 
-def default_root() -> Path:
+SYSTEM_ROOTS = (
+    "/bin",
+    "/boot",
+    "/dev",
+    "/etc",
+    "/lib",
+    "/lib64",
+    "/media",
+    "/mnt",
+    "/opt",
+    "/proc",
+    "/run",
+    "/sbin",
+    "/srv",
+    "/sys",
+    "/usr",
+    "/var",
+    "/Applications",
+    "/Library",
+    "/System",
+    "/private",
+)
+
+
+def is_safe_default_root(path: Path, home: Path | None = None) -> bool:
+    """True when `path` looks like a projects folder, not a broad place.
+
+    Ribbon serves the whole root as static files, so guessing too high exposes
+    far more of the disk than the user meant. The filesystem root, a home
+    folder, a top-level folder, and anything inside a system folder are never
+    guessed. An explicit --root is still allowed to point anywhere.
+    """
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    if resolved.parent == Path(resolved.anchor):
+        return False
+    if resolved == (home or Path.home()).expanduser().resolve():
+        return False
+    for name in SYSTEM_ROOTS:
+        system = Path(name)
+        if resolved == system or system in resolved.parents:
+            return False
+    return True
+
+
+def default_root() -> Path | None:
     """The folder whose child directories Ribbon should list.
 
     If _ribbon sits in a wrapper folder (Work) beside a single container
     (tries), list the container's children. If _ribbon sits beside the
-    projects, list them directly.
+    projects, list them directly. A guess that lands on the filesystem root, a
+    home folder, or a system folder is refused, so the caller has to ask for
+    --root.
     """
     parent = APP_DIR.parent
     children = child_dirs(parent)
+    candidate: Path | None = None
     if len(children) == 1 and is_container(children[0]):
-        return children[0]
-    if children:
-        return parent
+        candidate = children[0]
+    elif children:
+        candidate = parent
+    else:
+        grandparent = parent.parent
+        if grandparent != parent and child_dirs(grandparent):
+            candidate = grandparent
 
-    grandparent = parent.parent
-    if grandparent != parent and child_dirs(grandparent):
-        return grandparent
-    return parent
+    if candidate is None or not is_safe_default_root(candidate):
+        return None
+    return candidate
 
 
 TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
@@ -212,15 +276,34 @@ META_DESCRIPTION_FIRST_RE = re.compile(
     rb'name\s*=\s*["\']description["\']',
     re.IGNORECASE | re.DOTALL,
 )
-HEAD_CLOSE_RE = re.compile(rb"</head\s*>", re.IGNORECASE)
-BODY_OPEN_RE = re.compile(rb"<body\b[^>]*>", re.IGNORECASE)
-BODY_CLOSE_RE = re.compile(rb"</body\s*>", re.IGNORECASE)
-# Runs right after the declarative shadow bar parses, so it is already in its
-# hidden state at first paint. ribbon.js reads the same two keys and takes over.
+# Contents of these elements are text, not markup, so a <body> or </head>
+# written inside one is not a real tag. The scanner below skips them.
+RAW_TEXT_TAGS = frozenset(
+    (
+        b"script",
+        b"style",
+        b"textarea",
+        b"title",
+        b"xmp",
+        b"iframe",
+        b"noembed",
+        b"noframes",
+        b"noscript",
+        b"plaintext",
+    )
+)
+# Runs right after the declarative shadow bar parses. data-ribbon-booting turns
+# off the bar's transition, so the hidden state lands without animating. Two
+# frames later the attribute is removed and normal transitions resume.
+# ribbon.js reads the same two keys and takes over.
 BOOT_SCRIPT = (
     b"<script>try{"
     b'var h=document.querySelector("[data-ribbon-host]");'
     b"if(h){"
+    b'h.setAttribute("data-ribbon-booting","");'
+    b"requestAnimationFrame(function(){requestAnimationFrame(function(){"
+    b'h.removeAttribute("data-ribbon-booting")'
+    b"})});"
     b'if(sessionStorage.getItem("ribbon:hidden")==="1")'
     b'h.setAttribute("data-ribbon-hidden","");'
     b'else if(sessionStorage.getItem("ribbon:scroll")===location.href)'
@@ -382,308 +465,6 @@ def readme_summary(path: Path) -> tuple[str, str]:
     return markdown_summary(read_readme(path))
 
 
-def _safe_url(url: str) -> str:
-    value = unescape(url).strip()
-    if re.match(r"(?i)^(?:javascript|vbscript|data):", value):
-        return "#"
-    return url
-
-
-def _inline_markdown(text: str) -> str:
-    codes: list[str] = []
-
-    def stash_code(match: re.Match) -> str:
-        codes.append("<code>" + escape(match.group(1)) + "</code>")
-        return f"\x00{len(codes) - 1}\x00"
-
-    text = re.sub(r"`([^`\n]+)`", stash_code, text)
-    text = escape(text)
-
-    def image(match: re.Match) -> str:
-        alt = match.group(1)
-        target = _safe_url(match.group(2).split()[0] if match.group(2).split() else "")
-        return f'<img src="{target}" alt="{alt}" loading="lazy">'
-
-    def link(match: re.Match) -> str:
-        label = match.group(1)
-        target = _safe_url(match.group(2).split()[0] if match.group(2).split() else "")
-        return f'<a href="{target}">{label}</a>'
-
-    text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", image, text)
-    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", link, text)
-    text = re.sub(r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", text)
-    text = re.sub(r"__([^_\n]+)__", r"<strong>\1</strong>", text)
-    text = re.sub(r"~~([^~\n]+)~~", r"<del>\1</del>", text)
-    text = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<em>\1</em>", text)
-    text = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"<em>\1</em>", text)
-    for index, code in enumerate(codes):
-        text = text.replace(f"\x00{index}\x00", code)
-    return text
-
-
-LIST_RE = re.compile(r"^(\s*)([-+*]|\d+[.)])\s+(.*)$")
-FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
-HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
-SETEXT_RE = re.compile(r"^\s{0,3}(=+|-+)\s*$")
-RULE_RE = re.compile(
-    r"^\s{0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$"
-)
-TABLE_SEP_RE = re.compile(
-    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
-)
-
-
-def _table_cells(line: str) -> list[str]:
-    row = line.strip()
-    row = row.removeprefix("|")
-    row = row.removesuffix("|")
-    return [cell.strip() for cell in row.split("|")]
-
-
-def _render_table(lines: list[str], index: int) -> tuple[str, int]:
-    headers = _table_cells(lines[index])
-    alignments: list[str] = []
-    for cell in _table_cells(lines[index + 1]):
-        if cell.startswith(":") and cell.endswith(":"):
-            alignments.append("center")
-        elif cell.endswith(":"):
-            alignments.append("right")
-        elif cell.startswith(":"):
-            alignments.append("left")
-        else:
-            alignments.append("")
-    index += 2
-    rows: list[list[str]] = []
-    while index < len(lines) and lines[index].strip() and "|" in lines[index]:
-        rows.append(_table_cells(lines[index]))
-        index += 1
-
-    def cell(tag: str, value: str, position: int) -> str:
-        align = alignments[position] if position < len(alignments) else ""
-        style = f' style="text-align: {align}"' if align else ""
-        return f"<{tag}{style}>{_inline_markdown(value)}</{tag}>"
-
-    head = "".join(cell("th", value, i) for i, value in enumerate(headers))
-    body = "".join(
-        "<tr>" + "".join(cell("td", value, i) for i, value in enumerate(row)) + "</tr>"
-        for row in rows
-    )
-    table = (
-        "<div class=\"rc-table-wrap\"><table><thead><tr>"
-        + head
-        + "</tr></thead><tbody>"
-        + body
-        + "</tbody></table></div>"
-    )
-    return table, index
-
-
-def _render_list(lines: list[str], index: int) -> tuple[str, int]:
-    first = LIST_RE.match(lines[index])
-    assert first is not None
-    base_indent = len(first.group(1))
-    ordered = first.group(2)[0].isdigit()
-    start_number = int(re.match(r"\d+", first.group(2)).group()) if ordered else 1
-    items: list[str] = []
-
-    while index < len(lines):
-        match = LIST_RE.match(lines[index])
-        if not match:
-            break
-        indent = len(match.group(1))
-        marker = match.group(2)
-        if indent != base_indent or marker[0].isdigit() != ordered:
-            break
-        content = [match.group(3)]
-        item_indent = indent + len(marker) + 1
-        index += 1
-        while index < len(lines):
-            following = lines[index]
-            if not following.strip():
-                lookahead = index
-                while lookahead < len(lines) and not lines[lookahead].strip():
-                    lookahead += 1
-                if lookahead < len(lines):
-                    next_item = LIST_RE.match(lines[lookahead])
-                    if next_item and len(next_item.group(1)) == base_indent:
-                        break
-                    if next_item and len(next_item.group(1)) > base_indent:
-                        content.append("")
-                        index = lookahead
-                        continue
-                    if len(lines[lookahead]) - len(lines[lookahead].lstrip()) > base_indent:
-                        content.append("")
-                        index = lookahead
-                        continue
-                break
-            next_item = LIST_RE.match(following)
-            if next_item and len(next_item.group(1)) == base_indent:
-                break
-            leading = len(following) - len(following.lstrip())
-            if leading > base_indent:
-                content.append(
-                    following[item_indent:]
-                    if len(following) >= item_indent
-                    else following.lstrip()
-                )
-                index += 1
-                continue
-            break
-        items.append("\n".join(content))
-
-    rendered: list[str] = []
-    for item in items:
-        task = ""
-        task_match = re.match(r"^\[([ xX])\]\s+(.*)$", item, re.DOTALL)
-        if task_match:
-            checked = task_match.group(1).lower() == "x"
-            task = '<input type="checkbox" disabled' + (" checked" if checked else "") + "> "
-            item = task_match.group(2)
-        body = _render_blocks(item).strip()
-        if body.startswith("<p>"):
-            end = body.find("</p>")
-            if end != -1:
-                body = body[3:end] + body[end + 4 :]
-        rendered.append("<li>" + task + body + "</li>")
-
-    if ordered:
-        start = f' start="{start_number}"' if start_number != 1 else ""
-        return "<ol" + start + ">" + "".join(rendered) + "</ol>", index
-    return "<ul>" + "".join(rendered) + "</ul>", index
-
-
-def _is_block_start(lines: list[str], index: int) -> bool:
-    line = lines[index]
-    if not line.strip():
-        return True
-    if FENCE_RE.match(line) or HEADING_RE.match(line) or RULE_RE.match(line):
-        return True
-    if line.lstrip().startswith(">") or LIST_RE.match(line):
-        return True
-    if index + 1 < len(lines) and SETEXT_RE.match(lines[index + 1]):
-        return True
-    return "|" in line and index + 1 < len(lines) and bool(
-        TABLE_SEP_RE.match(lines[index + 1])
-    )
-
-
-def _render_blocks(text: str) -> str:
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    output: list[str] = []
-    index = 0
-
-    while index < len(lines):
-        line = lines[index]
-        if not line.strip():
-            index += 1
-            continue
-
-        fence = FENCE_RE.match(line)
-        if fence:
-            marker = fence.group(1)
-            info = fence.group(2).strip()
-            code: list[str] = []
-            index += 1
-            closing = re.compile(
-                r"^\s{0,3}" + re.escape(marker[0]) + r"{" + str(len(marker)) + r",}\s*$"
-            )
-            while index < len(lines) and not closing.match(lines[index]):
-                code.append(lines[index])
-                index += 1
-            if index < len(lines):
-                index += 1
-            language = info.split()[0] if info else ""
-            css = f' class="language-{escape(language)}"' if language else ""
-            output.append(
-                "<pre><code" + css + ">" + escape("\n".join(code)) + "</code></pre>"
-            )
-            continue
-
-        heading = HEADING_RE.match(line)
-        if heading:
-            level = len(heading.group(1))
-            output.append(
-                f"<h{level}>{_inline_markdown(heading.group(2))}</h{level}>"
-            )
-            index += 1
-            continue
-
-        if (
-            index + 1 < len(lines)
-            and SETEXT_RE.match(lines[index + 1])
-            and line.strip()
-            and not LIST_RE.match(line)
-        ):
-            level = 1 if lines[index + 1].strip().startswith("=") else 2
-            output.append(
-                f"<h{level}>{_inline_markdown(line.strip())}</h{level}>"
-            )
-            index += 2
-            continue
-
-        if RULE_RE.match(line):
-            output.append("<hr>")
-            index += 1
-            continue
-
-        if line.lstrip().startswith(">"):
-            quote: list[str] = []
-            while index < len(lines) and (
-                lines[index].lstrip().startswith(">") or not lines[index].strip()
-            ):
-                quote.append(re.sub(r"^\s{0,3}>\s?", "", lines[index]))
-                index += 1
-            output.append(
-                "<blockquote>" + _render_blocks("\n".join(quote)) + "</blockquote>"
-            )
-            continue
-
-        if "|" in line and index + 1 < len(lines) and TABLE_SEP_RE.match(lines[index + 1]):
-            table, index = _render_table(lines, index)
-            output.append(table)
-            continue
-
-        if LIST_RE.match(line):
-            listing, index = _render_list(lines, index)
-            output.append(listing)
-            continue
-
-        if line.startswith(("    ", "\t")):
-            code = []
-            while index < len(lines) and (
-                lines[index].startswith("    ")
-                or lines[index].startswith("\t")
-                or not lines[index].strip()
-            ):
-                code.append(
-                    lines[index][4:]
-                    if lines[index].startswith("    ")
-                    else lines[index].lstrip("\t")
-                )
-                index += 1
-            while code and not code[-1].strip():
-                code.pop()
-            output.append("<pre><code>" + escape("\n".join(code)) + "</code></pre>")
-            continue
-
-        paragraph = [line.strip()]
-        index += 1
-        while (
-            index < len(lines)
-            and lines[index].strip()
-            and not _is_block_start(lines, index)
-        ):
-            paragraph.append(lines[index].strip())
-            index += 1
-        output.append("<p>" + _inline_markdown(" ".join(paragraph)) + "</p>")
-
-    return "\n".join(output)
-
-
-def render_markdown(text: str) -> str:
-    return _render_blocks(text)
-
-
 def markdown_title(text: str, rel_path: str) -> str:
     title, _ = markdown_summary(text)
     if title:
@@ -694,27 +475,6 @@ def markdown_title(text: str, rel_path: str) -> str:
         parent = path.parent.as_posix()
         return fallback_title("" if parent == "." else parent)
     return fallback_title(stem)
-
-
-def markdown_view_html(rel_path: str, text: str) -> str:
-    path = Path(rel_path)
-    folder = path.parent.as_posix()
-    folder_label = "/" if folder in ("", ".") else "/" + folder + "/"
-    return (
-        '<main class="rc-doc">'
-        '<header class="rc-doc-head">'
-        '<p class="rc-kicker">Markdown</p>'
-        '<p class="rc-doc-path">'
-        + escape(folder_label)
-        + "<span>"
-        + escape(path.name)
-        + "</span></p>"
-        "</header>"
-        '<article class="rc-markdown">'
-        + render_markdown(text)
-        + "</article>"
-        "</main>"
-    )
 
 
 def project_kind(path: Path, filenames: list[str]) -> dict | None:
@@ -859,6 +619,7 @@ def _git_check_ignored(root: Path, paths: list[str]) -> set[str]:
             input="\0".join(paths).encode("utf-8"),
             capture_output=True,
             timeout=6,
+            env=_git_env(),
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -1125,1009 +886,6 @@ def project_info(path: Path, rel_dir: str) -> dict | None:
     }
 
 
-GIT_CACHE: dict[str, tuple[float, dict]] = {}
-GIT_STATUS_LOCKS: dict[str, threading.Lock] = {}
-GIT_STATUS_LOCKS_GUARD = threading.Lock()
-GIT_CACHE_SECONDS = 2.0
-# A cold manifest pays for one `git status` per folder. Running a handful at
-# once turns that serial wait into roughly the slowest repo instead of the sum.
-GIT_STATUS_WORKERS = 8
-# The bar redraws on every page load. Re-scanning every repository each time
-# makes a fast click feel like a stall, so the manifest reuses Git lights for
-# a few seconds. The Git panel still asks for fresh detail when it opens.
-GIT_LIGHT_SECONDS = 10.0
-
-GIT_LOCKS: dict[str, threading.Lock] = {}
-GIT_LOCKS_GUARD = threading.Lock()
-
-
-def repo_lock(path: Path) -> threading.Lock:
-    key = str(path.resolve())
-    with GIT_LOCKS_GUARD:
-        lock = GIT_LOCKS.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            GIT_LOCKS[key] = lock
-        return lock
-
-
-def _git(path: Path, args: list[str], timeout: float = 4) -> subprocess.CompletedProcess:
-    env = os.environ.copy()
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    return subprocess.run(
-        ["git", "-C", str(path), *args],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout,
-        env=env,
-        check=False,
-    )
-
-
-def _git_text(path: Path, args: list[str], timeout: float = 4) -> str:
-    try:
-        proc = _git(path, args, timeout)
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return proc.stdout.strip() if proc.returncode == 0 else ""
-
-
-def read_git_status(path: Path) -> dict:
-    """Return one coarse state word, plus the flags behind it.
-
-    `state` answers "what is the most urgent thing about this repo?" and the
-    checks below are ordered, so the first true one wins. Branch and history
-    states come before "dirty", which means any of them hides uncommitted work
-    from that word. Read `dirty` and `dirty_count` when the working tree
-    matters; never infer them from `state`.
-    """
-    try:
-        proc = _git(
-            path,
-            [
-                "-c",
-                "core.quotePath=false",
-                "status",
-                "--porcelain=v1",
-                "--branch",
-                "--untracked-files=normal",
-            ],
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return {"repo": False, "state": "error"}
-
-    if proc.returncode != 0:
-        return {"repo": False, "state": "no-repo"}
-
-    lines = proc.stdout.splitlines()
-    header = lines[0] if lines else ""
-    file_lines = lines[1:]
-    dirty = bool(file_lines)
-    branch_info = header[3:] if header.startswith("## ") else ""
-
-    tracking = ""
-    if " [" in branch_info and branch_info.endswith("]"):
-        branch_info, tracking = branch_info[:-1].split(" [", 1)
-
-    branch = None
-    upstream = None
-    detached = False
-    no_commits = False
-
-    if branch_info == "HEAD (no branch)":
-        detached = True
-    elif branch_info.startswith("No commits yet on "):
-        no_commits = True
-        branch = branch_info[len("No commits yet on ") :]
-    elif "..." in branch_info:
-        branch, upstream = branch_info.split("...", 1)
-    else:
-        branch = branch_info or None
-
-    ahead = 0
-    behind = 0
-    for match in re.finditer(r"(ahead|behind) (\d+)", tracking):
-        if match.group(1) == "ahead":
-            ahead = int(match.group(2))
-        else:
-            behind = int(match.group(2))
-
-    conflicted = any(line[:2] in {"UU", "AA", "DD", "AU", "UA", "DU", "UD"} for line in file_lines)
-    gone = "gone" in tracking
-    # Ordered on purpose: everything above "dirty" is about the branch or the
-    # history, so it wins the one-word label. See the docstring.
-    if detached:
-        state = "detached"
-    elif no_commits:
-        state = "no-commits"
-    elif conflicted:
-        state = "conflicted"
-    elif ahead and behind:
-        state = "diverged"
-    elif ahead:
-        state = "ahead"
-    elif behind:
-        state = "behind"
-    elif not upstream or gone:
-        state = "no-upstream"
-    elif dirty:
-        state = "dirty"
-    else:
-        state = "clean"
-
-    remotes: list[str] = []
-    if not detached:
-        remotes = [line.strip() for line in _git_text(path, ["remote"]).splitlines() if line.strip()]
-
-    return {
-        "repo": True,
-        "branch": branch,
-        "upstream": upstream,
-        "ahead": ahead,
-        "behind": behind,
-        "dirty": dirty,
-        "dirty_count": len(file_lines),
-        "conflicted": conflicted,
-        "has_remote": bool(remotes),
-        "remotes": remotes,
-        "state": state,
-    }
-
-
-def _git_status_lock(key: str) -> threading.Lock:
-    with GIT_STATUS_LOCKS_GUARD:
-        lock = GIT_STATUS_LOCKS.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            GIT_STATUS_LOCKS[key] = lock
-        return lock
-
-
-def git_status(path: Path, max_age: float = GIT_CACHE_SECONDS) -> dict:
-    key = str(path.resolve())
-    cached = GIT_CACHE.get(key)
-    if cached and time.monotonic() - cached[0] < max_age:
-        return cached[1]
-
-    # Prerendered neighbours ask for the manifest at the same moment. One
-    # lock per repo stops them running the same `git status` in parallel;
-    # whoever loses the race takes the fresh cache entry.
-    with _git_status_lock(key):
-        cached = GIT_CACHE.get(key)
-        if cached and time.monotonic() - cached[0] < max_age:
-            return cached[1]
-        status = read_git_status(path)
-        GIT_CACHE[key] = (time.monotonic(), status)
-        return status
-
-
-def list_folder_files(root: Path) -> list[dict]:
-    files: list[dict] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(
-            name
-            for name in dirnames
-            if name != ".git" and name not in SKIP_DIRS
-        )
-        for name in sorted(filenames):
-            rel = (Path(dirpath) / name).relative_to(root).as_posix()
-            files.append({"code": "?", "path": rel})
-            if len(files) >= MAX_DETAIL_FILES:
-                return files
-    return files
-
-
-def parse_status_files(output: str) -> list[dict]:
-    files: list[dict] = []
-    for line in output.splitlines():
-        if not line or line.startswith("## "):
-            continue
-        code = line[:2]
-        path = line[3:]
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        path = path.strip().strip('"')
-        if path:
-            files.append({"code": code, "path": path})
-        if len(files) >= MAX_DETAIL_FILES:
-            break
-    return files
-
-
-def _git_ignored(path: Path, relative: str) -> bool:
-    try:
-        proc = _git(path, ["check-ignore", "-q", "--", relative], 4)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return proc.returncode == 0
-
-
-def _git_tracked(path: Path, relative: str) -> bool:
-    return bool(_git_text(path, ["ls-files", "--", relative]))
-
-
-def _git_in_head(path: Path, relative: str) -> bool:
-    return bool(_git_text(path, ["ls-tree", "--name-only", "HEAD", "--", relative]))
-
-
-def find_scratch_dirs(root: Path) -> list[Path]:
-    """Every .scratch folder under root, skipping build and vendor folders."""
-    found: list[Path] = []
-    for dirpath, dirnames, _ in os.walk(root):
-        dirnames[:] = sorted(
-            name for name in dirnames if name != ".git" and name not in SKIP_DIRS
-        )
-        for name in SCRATCH_DIRS:
-            if name in dirnames:
-                found.append(Path(dirpath) / name)
-                dirnames.remove(name)
-    return found
-
-
-def _plain_gitignore_covers(root: Path, name: str) -> bool:
-    """Best-effort .gitignore check for folders that are not a repo yet."""
-    try:
-        text = (root / ".gitignore").read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return False
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith(("#", "!")):
-            continue
-        pattern = line.lstrip("/").rstrip("/")
-        if pattern in (name, f"{name}/*", f"**/{name}", "*", ".*"):
-            return True
-    return False
-
-
-def scratch_warnings(root: Path, repo: bool) -> list[str]:
-    warnings: list[str] = []
-    for target in find_scratch_dirs(root):
-        rel = target.relative_to(root).as_posix()
-        label = rel + "/"
-        if repo and _git_tracked(root, rel):
-            warnings.append(
-                f"{label} is tracked by Git and would be published. "
-                f"Remove it with: git rm -r --cached {rel}"
-            )
-            continue
-        if repo and _git_ignored(root, rel):
-            continue
-        if not repo and _plain_gitignore_covers(root, target.name):
-            continue
-        warnings.append(
-            f"{label} is not gitignored — add {rel}/ to .gitignore "
-            "so it is not published."
-        )
-    return warnings
-
-
-def gitignore_requirement(root: Path, include_untracked: bool = True) -> str | None:
-    """Block commits and pushes that would publish a .scratch folder."""
-    for target in find_scratch_dirs(root):
-        rel = target.relative_to(root).as_posix()
-        if _git_tracked(root, rel):
-            return (
-                f"{rel}/ is tracked by Git, so its files would be published.\n"
-                f"Remove it from the repository first:\n"
-                f"  git rm -r --cached {rel}\n"
-                f"  printf '{rel}/\\n' >> .gitignore"
-            )
-        if include_untracked and not _git_ignored(root, rel):
-            return (
-                f"{rel}/ is not gitignored, so it would be committed.\n"
-                f"Add it to .gitignore first:\n"
-                f"  printf '{rel}/\\n' >> .gitignore"
-            )
-    return None
-
-
-def file_warnings(root: Path, files: list[dict], repo: bool = False) -> list[str]:
-    warnings: list[str] = []
-    if files and not (root / ".gitignore").is_file():
-        warnings.append("No .gitignore — generated folders may be committed.")
-    warnings.extend(scratch_warnings(root, repo))
-
-    secrets_found: list[str] = []
-    large_found: list[str] = []
-    for item in files:
-        name = Path(item["path"]).name.lower()
-        likely_secret = (
-            name in SECRET_NAMES
-            or (name.startswith(".env.") and name not in {".env.example", ".env.sample", ".env.template"})
-            or name.endswith(SECRET_SUFFIXES)
-        )
-        if likely_secret:
-            secrets_found.append(item["path"])
-        try:
-            target = root / item["path"]
-            if target.is_file() and target.stat().st_size > LARGE_FILE_BYTES:
-                large_found.append(item["path"])
-        except OSError:
-            pass
-
-    if secrets_found:
-        warnings.append("Possible secrets: " + ", ".join(secrets_found[:5]))
-    if large_found:
-        warnings.append("Large files (over 5 MB): " + ", ".join(large_found[:5]))
-    return warnings
-
-
-def git_detail(path: Path) -> dict:
-    status = read_git_status(path)
-    GIT_CACHE[str(path.resolve())] = (time.monotonic(), status)
-    identity_ok = bool(_git_text(path, ["config", "user.name"])) and bool(
-        _git_text(path, ["config", "user.email"])
-    )
-    detail = {
-        **status,
-        "root": None,
-        "files": [],
-        "warnings": [],
-        "identity_ok": identity_ok,
-        "has_gitignore": (path / ".gitignore").is_file(),
-        "readme": readme_state(path),
-        "gh": bool(shutil.which("gh")),
-    }
-    if not status.get("repo"):
-        files = list_folder_files(path)
-        detail["root"] = str(path)
-        detail["files"] = files
-        detail["dirty_count"] = len(files)
-        detail["warnings"] = file_warnings(path, files)
-        detail["pages"] = pages_detail(path)
-        return detail
-
-    root_text = _git_text(path, ["rev-parse", "--show-toplevel"])
-    root = Path(root_text) if root_text else path
-    files: list[dict] = []
-    try:
-        proc = _git(
-            root,
-            [
-                "-c",
-                "core.quotePath=false",
-                "status",
-                "--porcelain=v1",
-                "--branch",
-                "--untracked-files=normal",
-            ],
-            timeout=8,
-        )
-        if proc.returncode == 0:
-            files = parse_status_files(proc.stdout)
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-
-    detail["root"] = str(root)
-    detail["remote_url"] = _git_text(root, ["remote", "get-url", "origin"]) or None
-    detail["files"] = files
-    detail["dirty_count"] = len(files)
-    detail["warnings"] = file_warnings(root, files, repo=True)
-    detail["has_gitignore"] = (root / ".gitignore").is_file()
-    detail["readme"] = readme_state(root)
-    detail["identity_ok"] = bool(_git_text(root, ["config", "user.name"])) and bool(
-        _git_text(root, ["config", "user.email"])
-    )
-    detail["pages"] = pages_detail(root, repo=True)
-    return detail
-
-
-def _action_error(message: str, output: str = "") -> dict:
-    return {"ok": False, "error": message, "output": output[-MAX_ACTION_OUTPUT:]}
-
-
-def _action_ok(output: str) -> dict:
-    return {"ok": True, "error": None, "output": output[-MAX_ACTION_OUTPUT:]}
-
-
-def _run_git_step(path: Path, args: list[str], timeout: float) -> tuple[bool, str]:
-    try:
-        proc = _git(path, args, timeout)
-    except subprocess.TimeoutExpired:
-        return False, "Git took too long and was stopped."
-    except OSError as exc:
-        return False, str(exc)
-    output = "\n".join(part for part in (proc.stdout, proc.stderr) if part).strip()
-    return proc.returncode == 0, output
-
-
-def _run_command(cmd: list[str], cwd: Path, timeout: float) -> tuple[bool, str]:
-    env = os.environ.copy()
-    env["GH_PROMPT_DISABLED"] = "1"
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            env=env,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return False, "The command took too long and was stopped."
-    except OSError as exc:
-        return False, str(exc)
-    output = "\n".join(part for part in (proc.stdout, proc.stderr) if part).strip()
-    return proc.returncode == 0, output
-
-
-def _repo_root(path: Path) -> Path | None:
-    root = _git_text(path, ["rev-parse", "--show-toplevel"])
-    return Path(root) if root else None
-
-
-def _identity_problem(root: Path) -> str | None:
-    name = _git_text(root, ["config", "user.name"])
-    email = _git_text(root, ["config", "user.email"])
-    if name and email:
-        return None
-    return (
-        "Git needs your name and email first. Run:\n"
-        '  git config --global user.name "Your Name"\n'
-        '  git config --global user.email "you@example.com"'
-    )
-
-
-def _staged_count(root: Path) -> int:
-    text = _git_text(root, ["diff", "--cached", "--name-only"])
-    return len([line for line in text.splitlines() if line.strip()])
-
-
-def _clean_message(value: object, fallback: str) -> str:
-    text = str(value or "").strip()
-    return text[:2000] or fallback
-
-
-def _push_branch(root: Path, status: dict) -> tuple[bool, str]:
-    branch = _git_text(root, ["symbolic-ref", "--short", "-q", "HEAD"]) or status.get("branch")
-    if not branch or branch == "HEAD":
-        return False, "You are not on a branch."
-
-    upstream = _git_text(
-        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
-    )
-    if upstream:
-        return _run_git_step(root, ["push"], 120)
-
-    remotes = status.get("remotes") or []
-    remote = "origin" if "origin" in remotes else (remotes[0] if remotes else "origin")
-    return _run_git_step(root, ["push", "-u", remote, branch], 120)
-
-
-def _add_readme(root: Path, text: object) -> dict:
-    """Write a new README.md and commit just that file."""
-    content = str(text or "")
-    if not content.strip():
-        result = _action_ok("")
-        result["readme_written"] = False
-        return result
-
-    problem = _identity_problem(root)
-    if problem:
-        return _action_error(problem)
-
-    if len(content) > MAX_README_CHARS:
-        return _action_error(
-            f"The README is too long. Keep it under {MAX_README_CHARS} characters."
-        )
-    if not content.endswith("\n"):
-        content += "\n"
-
-    existing = find_readme(root)
-    if existing:
-        if existing.name != "README.md":
-            result = _action_ok(f"{existing.name} already exists; left it unchanged.")
-            result["readme_written"] = False
-            return result
-        try:
-            current = existing.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            return _action_error(f"Could not read README.md: {exc}")
-        if current != content:
-            result = _action_ok("README.md already exists; left it unchanged.")
-            result["readme_written"] = False
-            return result
-        written = "README.md is already present."
-    else:
-        try:
-            (root / "README.md").write_text(content, encoding="utf-8")
-        except OSError as exc:
-            return _action_error(f"Could not write README.md: {exc}")
-        written = "Wrote README.md."
-
-    ok, stage_output = _run_git_step(root, ["add", "--", "README.md"], 60)
-    if not ok:
-        return _action_error("Could not stage README.md.", stage_output)
-
-    staged = _git_text(root, ["diff", "--cached", "--name-only", "--", "README.md"])
-    if not staged.strip():
-        result = _action_ok(written)
-        result["readme_written"] = True
-        return result
-
-    ok, commit_output = _run_git_step(
-        root, ["commit", "-m", README_COMMIT_MESSAGE, "--", "README.md"], 60
-    )
-    output = "\n".join(part for part in (stage_output, commit_output) if part)
-    if not ok:
-        return _action_error("Could not commit README.md.", output)
-    result = _action_ok(output or "Wrote and committed README.md.")
-    result["readme_written"] = True
-    return result
-
-
-def git_init(target: Path, message: str, make_gitignore: bool) -> dict:
-    existing = _git_text(target, ["rev-parse", "--show-toplevel"])
-    if existing:
-        return _action_error(f"This folder is already inside a Git repository: {existing}")
-    message = _clean_message(message, "Initial commit")
-
-    ok, output = _run_git_step(target, ["init"], 30)
-    if not ok:
-        return _action_error("Could not create the repository.", output)
-
-    if make_gitignore and not (target / ".gitignore").exists():
-        try:
-            (target / ".gitignore").write_text(DEFAULT_GITIGNORE, encoding="utf-8")
-        except OSError as exc:
-            return _action_error(f"Could not write .gitignore: {exc}", output)
-
-    blocked = gitignore_requirement(target)
-    if blocked:
-        return _action_error(blocked, output)
-
-    ok, add_output = _run_git_step(target, ["add", "-A"], 60)
-    output = "\n".join(part for part in (output, add_output) if part)
-    if not ok:
-        return _action_error("Could not stage the files.", output)
-    if _staged_count(target) == 0:
-        return _action_error("There are no files to commit.", output)
-
-    problem = _identity_problem(target)
-    if problem:
-        return _action_error(problem, output)
-
-    ok, commit_output = _run_git_step(target, ["commit", "-m", message], 60)
-    output = "\n".join(part for part in (output, commit_output) if part)
-    if not ok:
-        return _action_error("The initial commit failed.", output)
-    return _action_ok(output or "Created the repository and first commit.")
-
-
-def git_commit(target: Path, message: str) -> dict:
-    status = read_git_status(target)
-    if not status.get("repo"):
-        return _action_error("This folder is not a Git repository.")
-    if status.get("state") == "detached":
-        return _action_error("You are on a detached HEAD. Switch to a branch first.")
-    if status.get("conflicted"):
-        return _action_error("Resolve the merge conflicts before committing.")
-
-    root = _repo_root(target) or target
-    message = _clean_message(message, f"Update {target.name}")
-
-    blocked = gitignore_requirement(root)
-    if blocked:
-        return _action_error(blocked)
-
-    ok, add_output = _run_git_step(root, ["add", "-A"], 60)
-    if not ok:
-        return _action_error("Could not stage the files.", add_output)
-    if _staged_count(root) == 0:
-        return _action_error("There are no changes to commit.", add_output)
-
-    problem = _identity_problem(root)
-    if problem:
-        return _action_error(problem, add_output)
-
-    ok, commit_output = _run_git_step(root, ["commit", "-m", message], 60)
-    if not ok:
-        return _action_error("The commit failed.", commit_output)
-    return _action_ok(commit_output or "Committed the changes.")
-
-
-def git_push(target: Path) -> dict:
-    status = read_git_status(target)
-    if not status.get("repo"):
-        return _action_error("This folder is not a Git repository.")
-    if status.get("state") == "detached":
-        return _action_error("You are on a detached HEAD. Switch to a branch first.")
-    if not status.get("has_remote"):
-        return _action_error("There is no remote. Create one first.")
-
-    root = _repo_root(target) or target
-    blocked = gitignore_requirement(root, include_untracked=False)
-    if blocked:
-        return _action_error(blocked)
-    ok, output = _push_branch(root, status)
-    if not ok:
-        return _action_error("The push failed.", output)
-    return _action_ok(output or "Pushed the commits.")
-
-
-def _github_owner_repo(root: Path) -> tuple[str, str] | None:
-    url = _git_text(root, ["remote", "get-url", "origin"])
-    match = re.search(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/*$", url)
-    if not match:
-        return None
-    return match.group(1), match.group(2)
-
-
-def _github_pages_url(owner: str, name: str) -> str:
-    owner_lower = owner.lower()
-    name_lower = name.lower()
-    if name_lower == f"{owner_lower}.github.io":
-        return f"https://{owner_lower}.github.io/"
-    return f"https://{owner_lower}.github.io/{name_lower}/"
-
-
-def _index_case_mismatch(path: Path) -> str | None:
-    try:
-        names = sorted(entry.name for entry in path.iterdir() if entry.is_file())
-    except OSError:
-        return None
-    for name in names:
-        if name != "index.html" and name.lower() == "index.html":
-            return name
-    return None
-
-
-def pages_state(path: Path) -> dict:
-    try:
-        names = [entry.name for entry in path.iterdir() if entry.is_file()]
-    except OSError:
-        names = []
-    return {
-        "index": (path / "index.html").is_file(),
-        "entry": choose_html(names),
-        "case_mismatch": _index_case_mismatch(path),
-    }
-
-
-def pages_requirement(
-    root: Path, state: dict | None = None, repo: bool | None = None
-) -> str | None:
-    """Why GitHub Pages would not serve this folder, or None when it will."""
-    state = state if state is not None else pages_state(root)
-    if not state["index"]:
-        mismatch = state.get("case_mismatch")
-        if mismatch:
-            return (
-                "GitHub Pages is case-sensitive and needs a lowercase index.html. "
-                f"This folder has {mismatch}. Rename it to index.html, then "
-                "publish again."
-            )
-        entry = state["entry"]
-        if entry:
-            return (
-                "GitHub Pages needs an index.html at the repository root. "
-                f"This repo's page is {entry}. Rename it to index.html, or "
-                "create an index.html that opens it."
-            )
-        return (
-            "GitHub Pages needs an index.html at the repository root. "
-            "Add one, then publish again."
-        )
-
-    if repo is None:
-        repo = _repo_root(root) is not None
-    if repo:
-        head = bool(_git_text(root, ["rev-parse", "--verify", "HEAD"]))
-        in_head = _git_in_head(root, "index.html")
-        if not in_head and _git_ignored(root, "index.html"):
-            return (
-                "GitHub Pages only serves files that Git publishes, but "
-                "index.html is ignored by .gitignore. Unignore it, commit it, "
-                "then publish again."
-            )
-        if head and not in_head:
-            return (
-                "GitHub Pages only serves committed files, but index.html is "
-                "not in the last commit. Commit and push it, then publish again."
-            )
-    return None
-
-
-def pages_detail(root: Path, repo: bool = False) -> dict:
-    state = pages_state(root)
-    state["problem"] = pages_requirement(root, state, repo=repo)
-    return state
-
-
-def git_create_pages_entry(target: Path) -> dict:
-    root = _repo_root(target) or target
-    if (root / "index.html").is_file():
-        return _action_error("This repository already has an index.html.")
-    mismatch = _index_case_mismatch(root)
-    if mismatch:
-        return _action_error(
-            "GitHub Pages is case-sensitive and needs a lowercase index.html. "
-            f"This repository has {mismatch}. Rename it to index.html first."
-        )
-    if _git_ignored(root, "index.html"):
-        return _action_error(
-            "index.html would be ignored by .gitignore. Unignore it before "
-            "creating the Pages entry."
-        )
-    try:
-        names = [entry.name for entry in root.iterdir() if entry.is_file()]
-    except OSError as exc:
-        return _action_error(f"Could not read the repository folder: {exc}")
-    entry = choose_html(names)
-    if not entry:
-        return _action_error(
-            "No HTML page was found. Add one first, then create the Pages entry."
-        )
-    if _git_ignored(root, entry):
-        return _action_error(
-            f"{entry} is ignored by .gitignore, so the Pages entry could not "
-            "open it. Unignore it first."
-        )
-    href = quote(entry)
-    page = (
-        "<!doctype html>\n"
-        '<html lang="en">\n'
-        "<head>\n"
-        '<meta charset="utf-8">\n'
-        f'<meta http-equiv="refresh" content="0; url={href}">\n'
-        f"<title>{escape(Path(entry).stem)}</title>\n"
-        "</head>\n"
-        "<body>\n"
-        f'<p><a href="{href}">Open {escape(entry)}</a></p>\n'
-        "</body>\n"
-        "</html>\n"
-    )
-    try:
-        (root / "index.html").write_text(page, encoding="utf-8")
-    except OSError as exc:
-        return _action_error(f"Could not write index.html: {exc}")
-    return _action_ok(f"Created index.html, which opens {entry}.")
-
-
-def _enable_github_pages(
-    root: Path, owner: str, name: str, branch: str
-) -> tuple[bool, str]:
-    ok, output = _run_command(
-        [
-            "gh",
-            "api",
-            "--method",
-            "POST",
-            f"repos/{owner}/{name}/pages",
-            "-f",
-            f"source[branch]={branch}",
-            "-f",
-            "source[path]=/",
-        ],
-        root,
-        90,
-    )
-    if not ok and ("409" in output or "already" in output.lower()):
-        return True, output
-    return ok, output
-
-
-def _set_repo_homepage(
-    root: Path, owner: str, name: str, url: str
-) -> tuple[bool, str]:
-    return _run_command(
-        ["gh", "repo", "edit", f"{owner}/{name}", "--homepage", url], root, 60
-    )
-
-
-def git_create_remote(
-    target: Path,
-    name: str,
-    visibility: str,
-    description: str = "",
-    pages: bool = False,
-    readme: str = "",
-) -> dict:
-    status = read_git_status(target)
-    if not status.get("repo"):
-        return _action_error("This folder is not a Git repository.")
-    if status.get("state") == "detached":
-        return _action_error("You are on a detached HEAD. Switch to a branch first.")
-
-    root = _repo_root(target) or target
-    if not _git_text(root, ["rev-parse", "HEAD"]):
-        return _action_error("Make the first commit before creating a remote.")
-    if status.get("has_remote"):
-        return _action_error("This repository already has a remote.")
-    if not shutil.which("gh"):
-        return _action_error(
-            "GitHub CLI (gh) is not installed. Install it, or add a remote by hand."
-        )
-
-    ok, auth_output = _run_command(["gh", "auth", "status"], root, 20)
-    if not ok:
-        return _action_error("GitHub CLI is not logged in. Run: gh auth login", auth_output)
-
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", name):
-        return _action_error(
-            "Use a GitHub repo name with letters, numbers, dots, dashes, or underscores."
-        )
-    if visibility not in ("private", "public"):
-        return _action_error("Choose private or public visibility.")
-
-    blocked = gitignore_requirement(root, include_untracked=False)
-    if blocked:
-        return _action_error(blocked)
-
-    prep = _add_readme(root, readme)
-    if not prep["ok"]:
-        return prep
-
-    flag = "--private" if visibility == "private" else "--public"
-    description = str(description or "").strip()[:350]
-    cmd = [
-        "gh",
-        "repo",
-        "create",
-        name,
-        "--source",
-        ".",
-        "--remote",
-        "origin",
-        "--push",
-        flag,
-    ]
-    if description:
-        cmd.extend(["--description", description])
-    ok, output = _run_command(cmd, root, 180)
-    if not ok:
-        return _action_error("Creating the GitHub repo failed.", output)
-
-    result = _action_ok(output or f"Created {name} and pushed the commits.")
-    if prep.get("readme_written"):
-        result["readme_written"] = True
-    if not pages:
-        return result
-
-    owner_repo = _github_owner_repo(root)
-    if not owner_repo:
-        result["pages_error"] = (
-            "The repo was created, but its origin URL could not be read, "
-            "so GitHub Pages was not enabled."
-        )
-        return result
-    owner, repo = owner_repo
-
-    branch = status.get("branch") or _git_text(
-        root, ["symbolic-ref", "--short", "-q", "HEAD"]
-    )
-    if not branch:
-        result["pages_error"] = (
-            "The repo was created, but the branch name could not be found, "
-            "so GitHub Pages was not enabled."
-        )
-        return result
-
-    missing = pages_requirement(root)
-    if missing:
-        result["pages_error"] = missing
-        return result
-
-    ok, pages_output = _enable_github_pages(root, owner, repo, branch)
-    if not ok:
-        result["pages_error"] = "GitHub Pages could not be enabled.\n" + pages_output
-        return result
-
-    pages_url = _github_pages_url(owner, repo)
-    result["pages_url"] = pages_url
-    ok, homepage_output = _set_repo_homepage(root, owner, repo, pages_url)
-    if not ok:
-        result["pages_error"] = (
-            "GitHub Pages is on, but the repo homepage could not be set.\n"
-            + homepage_output
-        )
-    return result
-
-
-def git_enable_pages(target: Path, readme: str = "") -> dict:
-    status = read_git_status(target)
-    if not status.get("repo"):
-        return _action_error("This folder is not a Git repository.")
-    if status.get("state") == "detached":
-        return _action_error("You are on a detached HEAD. Switch to a branch first.")
-    if not status.get("has_remote"):
-        return _action_error("Create a GitHub remote first.")
-
-    root = _repo_root(target) or target
-    if not shutil.which("gh"):
-        return _action_error("GitHub CLI (gh) is not installed.")
-
-    ok, auth_output = _run_command(["gh", "auth", "status"], root, 20)
-    if not ok:
-        return _action_error("GitHub CLI is not logged in. Run: gh auth login", auth_output)
-
-    owner_repo = _github_owner_repo(root)
-    if not owner_repo:
-        return _action_error("The origin remote does not point at GitHub.")
-    owner, repo = owner_repo
-
-    branch = status.get("branch") or _git_text(
-        root, ["symbolic-ref", "--short", "-q", "HEAD"]
-    )
-    if not branch or branch == "HEAD":
-        return _action_error("You are not on a branch.")
-
-    missing = pages_requirement(root)
-    if missing:
-        return _action_error(missing)
-
-    if not status.get("upstream") or status.get("ahead"):
-        return _action_error(
-            "GitHub Pages only serves files that have been pushed. Push your "
-            "commits first, then publish again."
-        )
-
-    blocked = gitignore_requirement(root, include_untracked=False)
-    if blocked:
-        return _action_error(blocked)
-
-    prep = _add_readme(root, readme)
-    if not prep["ok"]:
-        return prep
-    if prep.get("readme_written"):
-        ok, push_output = _push_branch(root, status)
-        if not ok:
-            return _action_error(
-                "README.md was committed, but it could not be pushed.", push_output
-            )
-
-    ok, output = _enable_github_pages(root, owner, repo, branch)
-    if not ok:
-        return _action_error("GitHub Pages could not be enabled.", output)
-
-    pages_url = _github_pages_url(owner, repo)
-    result = _action_ok(output or f"Enabled GitHub Pages at {pages_url}.")
-    if prep.get("readme_written"):
-        result["readme_written"] = True
-    result["pages_url"] = pages_url
-    ok, homepage_output = _set_repo_homepage(root, owner, repo, pages_url)
-    if not ok:
-        result["pages_error"] = (
-            "GitHub Pages is on, but the repo homepage could not be set.\n"
-            + homepage_output
-        )
-    return result
-
-
-def run_git_action(action: str, target: Path, body: dict) -> dict:
-    if action == "init":
-        return git_init(
-            target,
-            _clean_message(body.get("message"), "Initial commit"),
-            bool(body.get("gitignore")),
-        )
-    if action == "commit":
-        return git_commit(target, _clean_message(body.get("message"), f"Update {target.name}"))
-    if action == "push":
-        return git_push(target)
-    if action == "pages":
-        return git_enable_pages(target, str(body.get("readme") or ""))
-    if action == "pages-entry":
-        return git_create_pages_entry(target)
-    if action == "remote":
-        return git_create_remote(
-            target,
-            str(body.get("name") or "").strip(),
-            str(body.get("visibility") or "private").lower(),
-            str(body.get("description") or "").strip(),
-            bool(body.get("pages")),
-            str(body.get("readme") or ""),
-        )
-    return _action_error("Unknown Git action.")
-
-
 def page_card_info(
     path: Path, rel_dir: str, include_untitled: bool = False
 ) -> dict | None:
@@ -2268,8 +1026,9 @@ def discover(
         for app, status in zip(apps, statuses):
             app["git"] = status
 
-    # `children` is already in name order, and every app's path is its child
-    # folder's name, so appending in this loop keeps that order.
+    # Sort by the path Ribbon reports instead of trusting the scan order or
+    # that every caller passed an immediate child.
+    apps.sort(key=lambda app: app["path"].lower())
     _cache.update(at=now, root=cache_key, apps=apps)
     return apps
 
@@ -2307,6 +1066,8 @@ def delete_plan(root: Path, requested: str) -> dict:
 
 def remove_directory(root: Path, plan: dict) -> dict:
     """Run the exact command shown to the user, then forget the folder's state."""
+    from git_actions import _run_command
+
     path = str(plan.get("path") or "")
     command = str(plan.get("command") or "")
     if not path or not command:
@@ -2337,24 +1098,15 @@ def remove_directory(root: Path, plan: dict) -> dict:
 
 
 # The bar floats above the page, so the document needs a strip of its own to
-# sit under it. The offset is in normal flow, so it exists at first paint even
-# when the scripts are slow or blocked. ribbon.js hides it with the same host
-# attribute it uses when the bar is hidden by hand.
+# sit under it. A generated block on the root element holds that strip in
+# normal flow, so it exists at first paint even when the scripts are slow or
+# blocked. It is not a child of <body>: a body child takes part in the page's
+# layout, so it would sit beside the content in a row-flex body or become an
+# extra grid item. ribbon.js removes the strip with the same host attribute it
+# uses when the bar is hidden by hand.
 PAGE_OFFSET_CSS = (
-    "[data-ribbon-host][data-ribbon-hidden] + [data-ribbon-offset]"
-    " { display: none !important; }\n"
-)
-PAGE_OFFSET_MARKUP = (
-    '<div data-ribbon-offset aria-hidden="true" style="'
-    "display:block!important;"
-    "height:40px!important;"
-    "min-height:40px!important;"
-    "margin:0!important;"
-    "padding:0!important;"
-    "border:0!important;"
-    "flex:none!important;"
-    "pointer-events:none!important"
-    '"></div>'
+    f'html::before{{content:"";display:block;height:{BAR_HEIGHT}px;pointer-events:none;}}\n'
+    "html:has([data-ribbon-host][data-ribbon-hidden])::before{display:none;}\n"
 )
 
 BAR_HOST_STYLE = (
@@ -2412,6 +1164,7 @@ BAR_MARKUP = "".join(
         <span class="led-tip-row"><span class="led off" data-tip-led="repo" aria-hidden="true"></span><span data-tip-text="repo"></span></span>
         <span class="led-tip-row"><span class="led off" data-tip-led="changes" aria-hidden="true"></span><span data-tip-text="changes"></span></span>
         <span class="led-tip-row"><span class="led off" data-tip-led="remote" aria-hidden="true"></span><span data-tip-text="remote"></span></span>
+        <span class="led-tip-hint">Tap again for Git actions</span>
       </span>
     </span>
     <span class="count"></span>
@@ -2568,260 +1321,273 @@ BAR_MARKUP = "".join(
 
 # --- embedded assets: generated by build.py; do not edit ---
 _EMBEDDED_ASSETS_B64: dict[str, str] = {
-    # bar.css: 25388 bytes -> 4585 compressed
+    # bar.css: 25718 bytes -> 4662 compressed
     "bar.css": (
-        "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"
-        "fKu8XZz+7jVQGNIM9TfpGm6nJ/1P6B9nUg=="
+        "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"
     ),
-    # bar.js: 40252 bytes -> 9545 compressed
+    # bar.js: 42466 bytes -> 10232 compressed
     "bar.js": (
-        "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"
-        "VG7uif2papEJ+wmubPOTaH2XAqP4H+u6pwE="
+        "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"
+        "b1NCxzyfuJ+6FKnyn+J6tz9pBu5SIED/D73ET/4="
     ),
     # card.css: 11003 bytes -> 2718 compressed
     "card.css": (
@@ -2954,207 +1720,209 @@ _EMBEDDED_ASSETS_B64: dict[str, str] = {
         "Km5yzH7IE2v4v1GSP5D9XgPjlDw6hZOZa1zU2wpdt12ONdcaMyGSzYDAm7lBu/dDd7UhKrsl3c1X"
         "j3efWTelm9vyt8W/9lQA3Q=="
     ),
-    # ribbon.js: 45191 bytes -> 11293 compressed
+    # ribbon.js: 45680 bytes -> 11445 compressed
     "ribbon.js": (
-        "eNrtff1yG7mR+P9+Cmjq7pZck5Ts7G6yzMouWfbGvvVX2drsbTmKM+IMxbGGM7yZobSKV1V5iHuG"
-        "e7A8yfUHPhqYGZJynFT9qn5bicUBGg2g0Wg0Go3G/pfqTXZ2Vhbq73/7HxWreV7GTVacj1S8bsrx"
-        "IkvgQ9VXWTNbpJWalxUClXkCH+VcPT158VzFq1U9uaO+hP+pipBNVteqSgsAqlWzSNVZXKl6kea5"
-        "imuVpLM8rqCWyxQS46S8Uo9fvVBxQ6BNuQLEiOq7szK5fjDC1EJlxYd01hC2GorNqmzV1BN1sshq"
-        "Nc/yVAGeFeUDHo21KstGxUWCyK6yKq1V1qj1aorfSn3HSFRdzQ6j/ffvueX70NTJhzqCVs7T6sF3"
-        "+wz1YGMZ3enuYvt3BvN1MWsyoPFgqD7eUSpaYx+aKps10R34npVF3RCRDqGhBbR98v79m2ePHr16"
-        "+f7R0Zv37xEom6tBmPni1Y8vT548fv9+CORu1lXhw9VpPld7hxYp0FYA9iKDVjTVOnUt4848ySEj"
-        "KWfrZVo0k9m6ghFu3jJBfv3V5fz3Oq2u36Y5jFdZDSIu/C6Jm3jMhDqNhoA6Tw3iRzGQ41AJgka6"
-        "H7bi//gP24gJEJ/JqKCZ1/qX8nEV6ZX68c3zQTSJRn7JyaJK51TkRs1i4Go1AOp9VPtfqos0XREP"
-        "wiDG6xxHBJB9ua9uAP7GUuP46Pjpk/c/PPkZ28wNnuIUmEbqrmiFhX/85PiHABymwEUf+PHTo5cv"
-        "nzwPSswWcVGkeVjIlnp78urN0R/CZsH0TdIiclDHb149D1EDujLPHRBy3NMnz/7w9ASAvjrAOiwD"
-        "n8GUGhjq4wjZUcfJOnSD0cQVAGo6pznQ0WTZEnGSPLmEH8+zukmLFFgFxMBxWTSYVsZJmuDYIaIR"
-        "jE9ZzNIp8aW60XhpVGTrdK26KmSwZVxk87RufqzyFsOIPMkxJhmmc1lY7kFq9/GOxmcnlm6WUvv7"
-        "6nEVX1kROK/KJX3kMdA5z3BqNVWcnS9ATl3F11rWQSUgrBYora7wGxINOtM4FVcVyE+QgEfQEhDN"
-        "iQKqQeeW8bUq4iXIQ7WqSpSZwM1ACQCoMyAhIY1rg6+GKZom0MlSLUCoQ9HL7DwmYq6LJsuptfOs"
-        "qh0pVZ02TZ6ixFeGZXQTDqHpcXJMH0cwIzQD0ECUgI9AinWe22TdVVxjdA5l2RGFeZVfv9A1D1CG"
-        "OHpz1TjzoOxRVcXXk6ymvxrwocK/asp/QITg3wkW0BiQgff8kpg7RHG2R6tanhbnzWIox9ZUvEwB"
-        "aWfFGkxBA2xn8b+pbbqeIk3KbZvQ75HIbMqLtNCZ9FtmXlWZLUm/bd7NHQEhxoF6JTqtR2NohmWy"
-        "XgG2lOBG1DMDTVPXDR79EmAjM4LDgO9flsBmrDMAT8DfWqWXsC6oVR43oEUscWFmdMR9cX2h4vM4"
-        "K4jlEVSy/So+T4HsS8ByFs8uQBtoSnWZwZQFfSSDZR8EylqVq7TQbGkZSDdv4NgG++/Yzgyt4EQ7"
-        "nQVrzlPoy0BIDBRJxPVTFRXlmOZRZCQT/jfBqSxWfsC1Ar5Jhx4TEAearEl5MYReV6C6oDR6UlW4"
-        "fj49OXmtUOxbMOSWdT0UaGwfNASKroEDaDXLm1Yik4RaS10x/8ESCcNqiDBFDr5W/73O0maCak5v"
-        "bX342pO/haJ7cG7udA7ys/kfszo7y9NgtPfsksPr4dBxhUSHoCzIhi2O5/QRtdLy/IiWI8ZhMfZ3"
-        "mWeFFaPLNC5YO9bSk9YDUGdjUJOvUrWIL9OJegPCG7UQhEMJ7XCBBr2gWRIXIEoB2C4z6yIGIoAM"
-        "MeI8nWya+yDP3zYxUG0ew2TXJOE/G9bqSyR1lmfNNaom52k0ag0D49BqZhvDHJDXkSdB/OU8XEw6"
-        "lD4WxSTfD9V/vn31crKKqzod1GldA4q3MC1BdEzO0+ZZky4HVnUjER/haEbDz7acaGbtWlAAWqwn"
-        "gIrqmTqu71coBEyLQp1yvks39slRh+QYMe1wS1KcZ3Pd6mG3mlwzFlI1zlLktss4y4nlrK7saWW0"
-        "G3sDmuP3IM8WJUgcoUDi98SBWHkcpAtlA1qOiwiq+QQU7DdM9jsujJvAZZmkpyPVkXOqh5/EhMkf"
-        "tiivt0G8rdTVxk0DhH9LaYOPCuuAtQDXILsOcAFkEdgLHy+yPBmYOiYzVnQns7ws0pdQeEDChAta"
-        "qCpdlpfpwMgYahVjbZGZBRWom0ft1dmI+pEyAu6jWVqPuKDTTTWvMKQZZGijk1wVFEiAvzLYqa8b"
-        "2q0zLtQhaDUXauRVjOuzUyaNlIP+g165BPljlcEapRCQd2+PW0kZWs2iPzBnP95YcD1VdY8n8yxv"
-        "QKw4yQv5rbkEaTgXm+tVWs7xa7JG7R+2yBEzf6SnKqZLSUgM0qUSOjqSkkL2h6QERaUoaX8LWysS"
-        "6tBxVJtBHCZGaiNRLfwIFJ9strCKPgw7rw4Vbg/GcZ6dF7BInK2bBpgRF4Y6rbTQP4dEtMcURsfC"
-        "lsAwCA0K2Q3aUvOinRU81LhRAEaDbQENP1IHVg3svi/+zY8neUrfdXOdkxh5XQHDV831QJM54h7D"
-        "KjTmRkUjm9OgiHDf2XJVVk1cNBGlDO+ImYYTTBobgikujQljhDXTuGOegqztEkBC9NLQMow/qtYs"
-        "Q5YPPZmDpkwg26t8hrNpUwEC8Io0GTDGIxrY/mIE1C52kv7SbCk0bgDGK7lK04tNTcR8r0CeJm/S"
-        "VdlX4gseEIAaJ2VzGFUAG51+EWA4Jj2h3hUJqxV1G88bkIkk/XdsC0K3sdQ/VfGqnwQIEZKAh6iv"
-        "A0d5zuXGZ00RFj3JNtc1brJVMLgrpPjjEkeXEXR3FACxs51EhzxN9Fvg6aY7tQcpeasWdZBed0zz"
-        "7TY8yLpbunYrTFs6d8tWdXTvbDuPMAhji2eB7NJqQb1ZHHxhS0OXdImgIbO4Sl7BapCDuO+XRQA0"
-        "LhkqCkt/X+HysLnsHGFaJY/zst5WcoYwkSf1z7PmBG0dWNIYfh866y0o8UcNLNJAv3QQySWALCQR"
-        "6/QRiPYo8rFupQPAdJIBW4QidHPJtmiG1Lfr5TKuttRZM1BY9vss75eTXBLPPOqw3E9xVYAOs6Xo"
-        "lYYKS78AxQ8Uh++zNE82Y1gyJDQCQHvQ7IQhLPsSuGmH+tHA2V35y40sa8qGpf5o97I7VO42vt1N"
-        "cMieFat1s0kUfJEhxDts0mHk4w5mM2Q+TnkmgG67QysTB93dTIFuZ0whjjewQd9pwCoC7G4II9ml"
-        "fFjyNXBQvUPtqA7X3ZUTih1Kh+WenRdltUvPMwLsrpyR7FK+xeYbFCDN5rg0BaVerRtgty1SkGBa"
-        "wowsjltkGcGEJY/jYpbmm0vOCKY1NFW2XYCuGKhV6+YFiCptrz98ULJ1sWCwzvWCs7YsGbp8e9Xg"
-        "jNdxs9haeAVAHWWPS1hPimRr8RnDdWDYxiOm82024ZxtnKLLdzCL7sEWfjEdaLOMLr955E1xPfgt"
-        "2m/jOUN+j+3QGKFHPq5ASwkPuTjv0bpGxGRkDbJQBPbnQRtoN3wgeRUPPDZt4TDf6yAmHPOZ/Rb+"
-        "RMixPt7v4FKB6AXbZnbBg/abNho+1K634dBg/ia/iastHeHdLwK2SuoObKkYfVHwtKVqbekw0W0H"
-        "37nWjDz0p7JIGlezBekEW6olraBFrO/jy7fpbNN6rXcFNUMdRvP4skQDcbg1QGygftwSW5znHXig"
-        "VWjR37YbB5Ct7dkZT3dLAMNTmEd8muR3sZvMC4ZuEfrJctVcbxmiFGHM6oGTNSuS9BcoNL4XnE3l"
-        "5QxPVsNj60VKKz8s7ss4z/5KUn9AsNheFO+oFZqzCaxhTlZXqoET0RdrQHWjcPg9/PlOHjJgwt1D"
-        "dU+euaGpy6+SvAboFxZ9l50Oh2QOxfb5p3Wm/kyknYFidtE6fb7xepr+AttUFG5U/gHKMdcYTvxO"
-        "Hci6sE9nIPOe82GJ6LLo9Afu9Iew0x9anXY70yLJEj442EiED6fDYXBGi+SY0Bi/mg8sIibVAZqM"
-        "bZo54nkguuC3RvmdC0t6kIboH0TqzRaCo8JqJKPzzyFhyDvk4QR20ctBcMYquAT7OeW6nd8BIZjq"
-        "4dTnWe8I5lQ07qFM50pF7lQ0DpoyELABSi7KW/ofC/pIIq+7N3I5rEFPjmkhwYWG/SkQo/uaxHWd"
-        "wm7sYUfaVB4rsE3BGCIImOwL2BRjobDAMHiPaZmmY4sBQdOhHFYuMDlFAaiXXaZ65TMeM/w1kOrE"
-        "7MLBeGU8GFx8Tv1S66ouK2WmGSbjmRSaTWdlldCZtq9nANWfaemlyWDWOPQNesy1YDPx58Adh4h8"
-        "dM+zX5OZafhh0PRQCF4U5VXhqr2FSKOS79BXE7J/SK+t9Do1zova2YxbL9o6QSJUOJjvToftQ6OL"
-        "9FrOVj03uDrIM6xuHRQ8kr9cL88AmyQFZREbS7EnSoFAxC97rNQxhjeC3ark1YoY0x9DzHhLTrqh"
-        "orhGUiKhZjCEoIXG1cCeiZUlenHQMjdyXi+19FNiPXOq/468dKlOTlspnbCoMU7DhABSa3tT78vB"
-        "CNVrKj8EhNO0pvLDr8fpU9Pg24dzasQ0+G7hQw1mKj9amByE/mhBaB1mGnz7cKSiTN3PQEozRaby"
-        "YyRW18SSz/328ulsZGp/eXknGefAXy8djfpT88PL0Xb6qfgdlEQ7+tT9lL0xpyBT8dvLdwccU/8z"
-        "wKLPLqbeV6smPACYyo+uuiyQ+O6oTeAynw7KWaWn4reXr+eV+eXlaevyVPz28smCPLW/vDxjJZ7K"
-        "Dw9CWoKnYUIXpATy8q1Bd+p9tWBstpcT2GWnHWk98Gx6nXYleiVCo+q0K7GvRAjswQnb6DT47oAT"
-        "IF6uM3FO/c82lAPw8oSlchp8d8AJEH+MaIbqHz4XkyVo6n76fEp2nqn76eWysWfqfvq9YiPLVPz2"
-        "S6MRZ2p/mZXZwJBLPv1rUrReS39MmlYcp+aHSbeK3dT9tHnaF199VBkQ1VNxRmpJbq+AUYO94O+R"
-        "yuMzLKSTn+OXa+15yprlVHmug9YBUiiltkxZ8LZUlmGnF2V3kqDhQscG2qNlKAub/qF6+FibHgs3"
-        "BmVxbPrp0GeJ1I5CXTZLSF+P+TaBJnBsIYRHqq+7WkVqg8bbUrYOwgE/S0F9TF/AmhgQUWhzeCXJ"
-        "qBSiOcIn2HrFhr5TFvzG+AUZ35oTvNhEzpdVeVWDchmfoV8UptDhgXqEPstol32J58tX5TpPiOrs"
-        "+axmeTa7MMjIV6i+ileeg2es+EpAXsYJ3npKVbXGM8IcL1Fpbx6sa4RuRwYVufi4q1AjakJcQdmU"
-        "nH4Sz9eaPbP0AfnE4HhRAsXIrQv9mbLlMk0y8lu3P9WqSs1dr7MStrRFmp0vgALwPcAaAXdWhRcY"
-        "6qEeL6p6jVSrF0A9aCO6J+GJtvaIAj22xotdVyX5fp+T95lBh/So1QpKO5eziW20dj7jS2sLNNij"
-        "v/iqRPwVkEUPgHVfS/PsjAviiO3TaGXoMpXBABegSI4zUKnjAsYwaxZmjLMEnW2reD7PZsKZbZXO"
-        "1jk16D9rsrLpU2n/bsNbB9ayEcGEJdMoucU9hMkCG1XU5DWBqx8hX/vik0zzPVk/cK2IJLQsPAzd"
-        "PaV5wg7nVL0DSVLDQOLNmwjZIxoRvin9O1IpcFxVwLIP2UtN80jdqNMuX3B7LM/TjZsHO8SAUMFd"
-        "izYZsaDX0ZLO4KyhAySpdlN7dP0sGehbTmOBKJJXIaD0EFH4rpbaK+xDu0HyRpx3H462V7pmc+vN"
-        "1sSfE/Q7RE4QjaF5HPlgWeKuZ3kND7ABf+r7Uj5dfu/MPmjk9G7nBa58Q887lREPO53siV09R2xr"
-        "WLPGdGPslAsumrgYgA1obnkOrA6fZNE0aPpsAfp3YCizrnMBDU1Dpd1KbKK0EQ3G5i3IKnLUR/xm"
-        "WMId8A7ItbdgADlgwqGtFOYq9mwVJzrxrro3Up4jKkysv//tf6KhumupEql9ujJiigp4v7Ausc7c"
-        "LQASN35G6w4RJxPhB57o4YxjozENrO4UAGiFwLcOeSB/yBo9kIjfmQf5E49wBTxfX9K0h25Ug75M"
-        "tDfYTMtvF8xvF8BvxsHWsNxFi+X0RQEyamvodxenXe5JABP5SgaVQm/jRZakMGTovJUV6zRAvtB+"
-        "BST5oeeuHEjnywgntE0p0LvTS0mqbC4rFo1Mshq9cBE51YHFxL2E79T9tklZ+KPJ8ntydDQeMzoX"
-        "8JcuHkeolEix34NvqIht2LolL6JwKRjFrEbNjrKHO+l0UIbzsNxAmIEml3G+TodBR73r1Sx6hypI"
-        "mGiXc3Hno72IdwpPO7twtFzzC/Y33NvDH6Ih2hP+8FAxvL8kajd5UUbIZll9mKxvxK7j/CldhNJ2"
-        "Xf4QMHj130J4BR6y3RFkDhZ8S87eaSKKNuXq1Xxe+4fg2g02rhs+IK/1fdsX8Wog1Gi6fFChlraK"
-        "QUUjRXgFemrlxwYQyi77uGM/v6gV6HMGFa56UCxjL/wZan7oO28UThMzoFqjJ/1TjnFgbk+dXatF"
-        "7DRMnKjsiK/b0pTl77lWM9thIYCGJHQh16D5otbXZqkrkxY3nBg6DUrQQmflEu8u0pGSvLkmqAm8"
-        "0KOL6G4dCizsNglj8/MA1wezVaJ7K015fp6nPZ6U+sL4SO2VhZkhckitikHqkagQBIBpBx6J+Y70"
-        "RMgfzO16vp1AOrW53kzBEFa090nwiKLEW6OojiVmOCb+La053nfA5uD6yPXelRfXp8BbzWKyjH8Z"
-        "HIwMxFhASOmisUG7GbCTyhRM4rBXjwpGZAG7EdqlYjF9XeLcXZf4I0qggb4sMTbgwVW0VZXhcfl1"
-        "L5bXGqAfkSgnL2u04EewaYc5j3/dtQyDxASToDInJRKUKCZJaDANb1Gl+TmyPfUuHQtEzAv9uDYo"
-        "rGh1ap++n+PVm0C04RJm5Z7oGsLKBQfWFXIfOslW/mpDqbTYeOuXWWDoHgkAxXWNhn89DwdRVo+x"
-        "CiAI1dSqmcvVnnaRFUAIHK3IIxmDMrVa0AaSL390NwS34Dj7JWGCck18ZvT2YGU4gFmnT+o7lr8X"
-        "BDwwN3BFEAa5HC1C6ht4b0lyZ1+642JpgY6lQv+jw1i7TjksdmMmRfEe1ybv9fr3KHtvUorwGyPd"
-        "CaBIdI+80Q8s7T/hLqVTMhq3tQrpe14OkqziUyl/BWFloa3mBTKOlm4ioCjLG47AOaMxLm62QvWA"
-        "tik4/LKSsbpne+0FABE47J7GIbvrb27+XX56qrRBAmKbtyB+jwztOiyh9Tsue0om0U6Ckgo9+CRS"
-        "0soIq+K6SvnAvHM5cXtmsXFFIcLpoLQNhtL75yLFdQANoO+cFfRUAJyvQXsWZtGrBWo4Ayp3aDef"
-        "uJlgyO/8Y+ePXUZW3Pl4NL/duTX+t7HdSrdF1CPV8aDtAR2727mllR9DC/TZOsvZsaFzL/qP2KXv"
-        "OAO48JwQF815J/HoGoce/Q6kSoJm/D4jfifHSo4Loh84ApAlSHRor99D419AoQ7a3Pg+SbLpD6w3"
-        "hN9x175Zt5dJRR6BdZqCZvkGVMlyORg8Ru+forwCWv1ZDUhXrDhrqL5UX93/9qtvv/nt/W+/gcn7"
-        "4AHU7I8dLCnLWh5ffKIr3p5/RGQMVyNzRjTsNRBcpRQ06JAF1U/05YpDj32zgwZ/4ItyxR2ZrNb1"
-        "YvARp+pUdZjRRrq2qalVGHW7PdDYxUbQRwsjrq49F3njCOLVY44uokoMjqpcFn5TNrR5wi31Klhl"
-        "7MhUnNMYUxkPIG7a1f8eU8NqIantY0jox6YJcdNqA48EgX1HO6Ru50k9/xsUXT69qH0ySSyximnO"
-        "Q+maIKSKGex6lWezFCoYQQ+6Zx2h6tHjxCTCD0cDpCAZVvRc43njI+4+leNSQNGDX75J7p/99tv5"
-        "1z5nAEaCcfoDpNCczZbrfNDgFG6ovntfA7c26lfXNQT+8yH8c7e7xG91gW9ECd3agYf5KysK1L4Q"
-        "EF0uib4W4SYnT8zQB44WSH/a+dKGA3sdmhNqckMToRDEtRdeUNA22pHPPpGHCKf9I8kZVAyfFSpy"
-        "Md1DeLyAOzT5MFL3J19J9VtrRw1v/vFG6hyYrEmTyC/0jbMG/IXg/4JbftyLXQHP0YxDY8DVoszp"
-        "kLLUB6RnIJtBa56jhbNew6+4dpgi2AaCAhih0SBK0oZCR0TabgMjUS6XWYOxfKCOC4ybECfqL6Bv"
-        "Ntd/wdBRaT6fhH3BLhOE1/wNPY7R4ERGWJGYwDoIamZIhE14inK8XtUNCIZliA2yuCu1h++eJWrn"
-        "SMBeqPDgD2z91q76vXbLJ87zcd/3xTr5kR4hhxBPTnDb9Z5TYQNAayqH32llSyuUvnNdrnXMOGup"
-        "GWj/SeThZZMt2f33AKX1vYODg5FrACUHIYCucUU2WB969h+53I8NDM7j333z1QH+h837zTdG7DgK"
-        "MJKsGBB6mPdfj2AEvx76qn6rr10kRFgGpTBlFmgsahH50OeDycHvRvDv74atdplF7GDytS9hXa8n"
-        "9742C3e3wtjWPZze4SuQxp8XqC5de8nPw8bKEU63n0Me0VmBrKyANaUe4/oWdTjo7lkxRcclYtHV"
-        "PIXZNEuHtF399dcwEl8wZ32IAeNfxPV7vvXPHs+d89atI11HDF6fSMY4Evqd4C8C6aVJOabQCA6D"
-        "QdBXol5kqxWJJBNMKBQWrmrX2972r2vZ/qx+jAlyBRNF7PWJCE/Bp9HQWIpbg/mW/BJIDNCBubm0"
-        "UD4vr9LqOK7RoEcbQ425JpXm6x51xnJmzwwgT6xBJ+v3s3t0FBz+bmZYU+olJipK3JEpoh/dEhbt"
-        "zAjRy5IW0GhnRoje6pQdBzuisY4+aZz1HibWIfZ6hvGTtlXcFMdBtBvYzEXcjvCOjgsYZVFsvINj"
-        "SzC6blaciW1xyI1y9gQ6YqgBBtqirw32LUp9clqv34eb12+/H3u6ENTrLa06+YH6zQGsTmZ17bPO"
-        "O8tHR5gu9uowuq6IgRfsSKwFweLYyWBrgjKPNrlCWUdPYeKQgVhpo8S5MpkvfUyF0UP4Q/1DpuCu"
-        "3lvnytsRQISZHqlOy85naWGVoosemTNtm/rPSqzFi4v1WLvxsstRklTQsa7ZAixMJ8xOCJiYbnit"
-        "km+o8c+pOEBRirbGzSDal2mtC0KIXTjm7u1hghfzdBmv+uFTkOZJ+uObZ8flcgU7n6LREDeBeZD7"
-        "JwJTO+ce7P8+uvdQURFUkj8/lKBKYi8AAv5wL8XtGBlyXKopusoJu0q8jqsYzQUpUCQFFQqDcUf3"
-        "okAQmDIuMHYwVqA+wJ83abKeoZ9AONH39ozTBblNv0CXUhgt29hW5iAarCqMsV/DikdIx1wFeiTg"
-        "9xBkvHbB7uMe9DRHX5OjIlsSu9WhydSGPyKvHgsWWvK7oQbDCSxcT2Ivkm5ssj3nNZM44UY5M2jP"
-        "iSbBp9j2Z0V/mzUYys2A/J1HESl6w/K16RYOx3XvhID7iO6uRY1hnIG5VjAYq5QkyODeNwcHKzyK"
-        "KVGv/Hnw7UGSng8j3LrFswzvLB04h+3boWphuifW3lOH86NK1lXMLHH/mwP0Uq3pQlU0W59ls/FZ"
-        "+tcMZvTk/khNfgv//w0awiKLKzz1TpsT2ImW66YnjLHe1xEFJ6s85nM6dn6aZ0VWL0jLsiDhSI/U"
-        "V/cPtg73K6g/8Q6ibzHmwqQPKAahoSs8MMO75rrhwVkr8wtnYlYvQUz5gN+URCwUkaBhgTGZ4iV8"
-        "ds7sYqdPY8xxJ5N3sqbAL5j04EBW3MOuaHoAZp58/TXxqywBaxToKBE09QqoVEct3XQDT9N4jNRv"
-        "7lt7CiRPzDDpYNb0NTTRwfmr75zfOvGhLtgRrB9d0v1jTumM7ZVxUVf1qWvoV0gWCV1fi9XEXVmP"
-        "1cRVWe98s3td8IoxAxonYN6g0gfrFPwbFl2lF138bcPzdWCqq5lmbanO+D3gi4E6cnkwH1vumc6p"
-        "AxZm8uhgzU5oNEEJ368krrJ4vMKW8HqPhLtVWbrjhCWfZklq4ftRWIdqD57eIjqOgnXSrnvOtI+K"
-        "rqAnRRQHYdTSXDmKlnSp6BF+Vqp2sFTn5esNQ6AvFHSMwq3GgOq6RVE7BOSj3hqCvgHwoP0BMPFr"
-        "AHuu+dVMIDt/vAvoDHqnNXivNq6iugKc3g5bx7TeOk1bc6Y1/5ldWo5SMB+jFnf59LoFi/UocUs0"
-        "ML7lnfwgQ+NOJk+FiANdstf7V2f4oAue6omSHcpmEMRAh7bJyOdNniIFEHRRC7ccBrcPRC1DLL6p"
-        "xDuWOtRIWm9TdNhLXLPoSEGYHzBNu+0n2m4jIyh47Q3Lcv0bS5P3kC774FC3YLixIz1jWVFMDXZK"
-        "l+88HLlbVNAGcnjVvsixwhiPzUQdU9R18cQPeVSnlcrjIqnlgw3W5dTi9Bhm4ysNsoh9p6H/PQ7X"
-        "Gzde3Y8v9UrQ3Rb6Pdq3d2xGdj8O1ZNB+8Z8hHa2D0j9kgUFBcf99GN5S0meusCqrg8MvLMaPoZy"
-        "0q59/IUhhfCBtWdvX2m7g4/e8GM/XMB+VGyXSyz/wvsRezKijT96/ECOfUSLO9PxetbIiy3SLMoE"
-        "NKXXr96eCI2Wvfdr/7mkSF+PGp9cr9IICqFTZMbmon1+qktC/9eYnzUcU2MBXjRd8La7I1MmoLeH"
-        "tkCFZqIpMqXhrvCJB3X7N39u+1iPw+e/f+UcvGJ+G4F+TMoL99ueq4lPHfSotbAqf2VqFxCQGxly"
-        "B6bcyJi3YM7AFL/5JSNcpemeczkDNYOFHZ5/gbilZXvY717mWhlsaHKOWfdOhwKgMyJ70x/PiKIR"
-        "3/HzfWPdFVlr7fP201mikYReUoRrq5fUTmckfb5nWUJuZ1iPtz/yHZQIwEeKtNC+ZN5YImGyZOSl"
-        "aQrRH3GuzEdx0AIfWlOQ/siR7/dDo+2PPIGT6fqEzQM1B2geHJ94ySR7bOb7MoBI+kf9AR0mz3Td"
-        "Pr+Sodu0LoPZ+lWT2h6/4RcfcI3RRY7yaHQoI7wQS9l1WUkFPR6pM2G6jic0czDILKha6eBMGK27"
-        "Osw4N1zdRYLyGSEsrQRNnZUHdCOb3nO4i0zXo5r54qV74gazW5jAeMsW7PW6uklsv9nPE0Gwa3iv"
-        "u+1xa2sS2xRv1WWATYE3tofcuNn9/q0MuxVcTHbuYtjp9sZj1vYi1u7uC3oAo++2PN9QlWYCgLe3"
-        "5XWun0n7bB3uPcKUIL9uX8fVrYusnwsMyHBDKalP+Lvy9hlh59jiFRAyoaA5iPfxLecQ01ezD3+M"
-        "PoOwA6vRIIITw1RAstKfHT4KeZE/IDRedac3pjxkw2E4Snp16Q1qsIq9QULw9kCM+YWbAMxnJC3g"
-        "THN4NenvTpDvcagHBwWH27ZsuOnnS+l0LtlxgrhpEyKuALcPB9HFtsOhRWBiCLRxQCWhBklaDzbP"
-        "c8mTV1DEHmGoA0R37ei16z65z/c10nrtwKdpkGtKeI9ih8seLWf+Ta+Q9txYlpbkxzZs9uAM/nF0"
-        "9eJpY5aXrkNFyavqCMNasAu37ZXh6FNhER8ET6w3QpiKfU6nukEOUG+A5//+t/8lcaDDhvJT6lEP"
-        "q1oqUGQmn1WDiOOQ52W0Y4orP8B9t0lZRLAPOuIs3HjXt3NuuAD24brBx9X24F2b80ER02qNT2qO"
-        "Th/i+KmsLvCY0sTd0UHskaB+/ygMWaf1zwPoWdpkHHtfuPmx67vAe1D6zCyf2QzPppHJ5IhXqX8k"
-        "wtPSoGrdiJIB44Xy3hec/hN4pUXMzT3nwFrYh+AJzCEKO0ynDV6PDFiUV0wMfgq36/nnFHMo0LF+"
-        "lJM3rpyMt53wS782M+RwwhhngKcdLk346HWJV7bNO9mTKDx+5IjtA+/ZT04eej6rO3KOyurxWZzs"
-        "wEDUC+OW8idYet8dnGovuYORuvfVwXA7X3NDN06QPQETjkEQHM4XQfq0xIRA1q9md9r1cKofql4B"
-        "4N1X40QqgUd9kyjA2O8/1Ckx/ctg9jmFu3e9+dK1Hmhj/x3PxhXtm3Ag+wxMBpyH0NxDFHIdDj6Q"
-        "NZR2r9a70V2mr80mrPCQ4bNZn3Z4BlrGDFflxZTFxoi5dYoOq+kveFYOq6SpRb4uigE+JpEwJwTd"
-        "2M3wRWNlTFTr+hhoTtFMvCeyuxuNxfoqv7XxzfATKlC+/KWrlkLu0l3L1uzYwYin17mw/xvXSgwI"
-        "5UF3ytIOh9dOw9rmymQjW0U6lAGCN1JgwKoBTpFWWbMsecd3G1bTLmXMTOFdbITEwLcY4o6hvM2g"
-        "hEPy0cwgFvt60SL5eGzXKdiCovGF5pIWP1EHA7cUC35tV0flal0QFmxq2fZRh9LcKdr5rEciueWJ"
-        "zm5rg3Ear93bLSJMGqzLraurFIuKTWBus6V9mGJ8pJY2SZ93JwcrtPVX7tT+ZGiJz6hqvlkXhYli"
-        "9NkV483rX/T/2JkOMNaUeO6fdoTz/xfRf/AEK2zmFpH/mZa31gtdW7ZVu22TNm/ANm/CuOEdBquA"
-        "gE4qhpQLY0hYwffQykB6An2qPL/3jqAtWvMO9my3OYPrWF+3DOwtlkiKiazHaB5nOW7k+hdG/bZT"
-        "22GCYjF7PhLppUdW+cwvbtEuKaQnjywsQvKbdyl1I+LudmX3vgjMUXMFs9BcYeDuldg86MUw20JS"
-        "6oCUmQ7Ey7ElhxhMaHxvGN4qloAUcpIAN8M55zPPM9Q52G0qrKNYmlA8m0D5tghtE+1tk03wOvim"
-        "i0rlFmXNJvYV451YxHFHTxRLgVU7MbewUg+6kW5ySvTv+jAbXGbplecyrcfhJ3L/9f25ELalx2Ji"
-        "RxNBz0k4Pljv7LAe8cTnqPqRt+6Tehav0qhDYWZA5Dz4+zidx+u88URLb1xQIWtaznizqqzrcVll"
-        "51kxUnkaX7LGTDPOTF53Z4nx6ABntx5wzUP+cN/Z5pjlgpBvlzYrfhKUaYVBF6EXyWu+zNROpJCP"
-        "9iiago5Q5At9Lswv+bDmOr6HstPLFuGODcyO5pcbEzftTsuQcjuatqygrekpTfL/HNxm/9iP3dtS"
-        "yaJGGfjkQXcTSMQ483APd+5Hf2N2mM3+TD70ZrKb8Vum8IaWKn8CUpSetNBPONp1zzZvVZUzWPE5"
-        "ml/rRJ+qh3Iag41a2MLH/fJCHLYjuDG2YEHnF+Vw+pBIjbOi9gZqGIY9dWH1zPQNUYoqW+HxDt1J"
-        "rAxHILL5QkdPZl+o0m3guG0yF0e6gvYJQvpOn2SrYaiH+oeNGroCmWRD0vovYcb1a+CdrKRng2Uk"
-        "R8jRUf7CwKgWXBZ+6BWGf0xhqNrf/cPUoIdrr9XYIrsjRoKiaMRn9YAAh+o7de+gdS1FVD30aq5t"
-        "zSN13estK6q7xoBQv9sW41If/UDDH7C94xp+fBUWExuPoBTFceyowrDqth5Qpw1Ft4XV3Bqxsiz0"
-        "NO4QOXrOBrPSzWQqYi3+pPLbuwCk8Aw8SeE1QF+B+gfFYcJS7jXLPHYz5xx8AfKH9NolzJoq9xLi"
-        "vPkh7bak+aJiu4QQF2X1eE2yWttUniRZQ1ezoeL9Pw+evXz948mvJ0/+6+TozZOjX98+ef7k+GT4"
-        "b/uTBncgunATn6MByvqFtA1gIftKE59dKdq2RX9/HE6lTYvLlvVjJxWSAeqmXGEI4fhcBmrvCuHQ"
-        "5YPl3mj7pE4YnekP+ESX/xTSv6YDbvuwudnILjZt5n8eR63Ne59q/q/pVKvxIBU3eB17iqvPRVta"
-        "u62t21u4HwUt6bCj/LMa0SJJS9vpJeRJtuqnox8B+/O2XihQGP49D68Me61+12u1sCCnffaKTcwu"
-        "GVzyS7tw5Rd+E7WuiHP3F9ncSP/QUqHR+uaOm466Fn5dTyMMgIkhvL13HDQ6RzxvtafQ2px1C1V+"
-        "8xjedOwC7Vrqt9A3bXgxwNFNxKkT0ue1TzsKg3wHoqilivTOFbeX32sHQN+mP7Byi5fAtWaD96ZW"
-        "aHW9DK5ObbAKbEcC+854BW0XOGW7zNEMvqp0x9lQw1cFQ6uFOzVB01g/NI2sA+ZBDcGDobbQyFYh"
-        "LM9aB1PQm6ktGAlCE2TKf+yrxRSRNEg01keJz4+/Iec3aEA0KiKcyt4eFJmqlrnypvUQZOebjb4r"
-        "cMe7lJ2KMd+roXdijuhpN/yF92vC/a5+O8YAto8wPVcdGVrJ3BUo50qHlNYxweiQLDLRciA9PB+j"
-        "6Yo1Wi8ubyJp31jxMI15q0bOV0TS7pSfzk+uD4PH2P3c1h0I6I+F4EfYqVtnZanDYHpqpf9ye1Cw"
-        "6/X29iUYW8i+N++n2KtWH/tuWXXD919rCbxm9Yj4D7zL6lpPv3sHU1o58GLOd90C9UI7+S8mSEE5"
-        "UkL0tsSufuHnDN9R0c/ngbDRj1TiC5rt53niYqK+x0PPRcouD+6RTHozY988WaHo8DylN4D0ezJQ"
-        "MT/To8/k3Gs9kHddq7r0nsnkt3104CD7FhDHrTZf0C6NzHuUhl7Vad0ll6/q1Hpp0icvG8ds04jt"
-        "Nl48WuZw2RhtSaxM9d+RW/HoWaqp/WUx0GhbYVKU1TLOs7+SPw/Zk02LZdxnTL8TnkqYzCTtiHxl"
-        "nqBrWfDXdaofC2ow3K86B1EqTPYGKf2d6PdMB/t/2icz9p8mi2aZP/y3/WzkjjWReAwOYrs6avSH"
-        "C6XN5m70R8IQmPt/mryLx389GH97ehcQ8T6ZLx8Og77dpVJt2pug1T4p6WIvkVEIaEkwXdrcpdWi"
-        "eOSOcvEe7ZB8ZQrYrbfp14qlZ0V5e2Dl+1/9bQliyJ23Xz1hN5voXrStOW4lsI0xb3/xqz56irFI"
-        "PQM1uTiHCVlSmGh+9Wtd5NkFsweLH9JaJgqbl96xc5qv3TcSB0WTRsLiKsg3vvElVzvD8W7+WZ5O"
-        "Qgq5h85uT6PjN6+eP3ck8kbxE4hl2+Urvb5RQjZPvqLT93qNbWPIZXIrERRmiRf28c4nRg5sc2UY"
-        "13B3kovQhkP/QeoNpBZAnc3xgkzKtpj402RRJmcjDkTR0zgTeJJbhrZ07zzeucIcVVV8DVtw+ste"
-        "7RRv0u7fpSE+9MrZ0FERSjPsp3sz7qOUY94DYD9j43QKzrCf9dtwG96YFYcAOg4HVYuaACxZN0P4"
-        "5/8AE2PWMw=="
+        "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"
     ),
 }
 # --- end embedded assets ---
@@ -3229,7 +1997,9 @@ def bar_css() -> bytes:
 
 def bar_shell_html() -> bytes:
     return (
-        b'<div data-ribbon-host style="'
+        b'<div data-ribbon-host data-ribbon-height="'
+        + str(BAR_HEIGHT).encode("utf-8")
+        + b'" style="'
         + BAR_HOST_STYLE.encode("utf-8")
         + b'"><template shadowrootmode="open"><style>'
         + bar_css()
@@ -3265,17 +2035,115 @@ def asset_url(name: str, version: str) -> str:
     return "/__ribbon/" + name + ("?v=" + version if version else "")
 
 
+def iter_html_tags(data: bytes):
+    """Yield (is_closing, name, start, end) for real tags in an HTML document.
+
+    This is a small scanner, not a tree builder. It exists so injection never
+    lands inside a comment or a script/style body, where a regex like
+    rb"<body\\b[^>]*>" would happily match. It also skips CDATA, declarations
+    such as <!DOCTYPE>, processing instructions, and the raw text of elements
+    like <script>, <style>, <textarea>, and <title>. Attribute values are
+    scanned with quote awareness, so a > inside a quoted value does not end a
+    tag.
+    """
+    n = len(data)
+    i = 0
+    while i < n:
+        start = data.find(b"<", i)
+        if start < 0:
+            return
+        if data.startswith(b"<!--", start):
+            close = data.find(b"-->", start + 4)
+            i = n if close < 0 else close + 3
+            continue
+        if data.startswith(b"<![CDATA[", start):
+            close = data.find(b"]]>", start + 9)
+            i = n if close < 0 else close + 3
+            continue
+        if data.startswith(b"<!", start) or data.startswith(b"<?", start):
+            close = data.find(b">", start + 2)
+            i = n if close < 0 else close + 1
+            continue
+
+        j = start + 1
+        closing = j < n and data[j : j + 1] == b"/"
+        if closing:
+            j += 1
+        name_start = j
+        while j < n:
+            char = data[j : j + 1]
+            if char.isspace() or char in (b">", b"/"):
+                break
+            j += 1
+        name = data[name_start:j].lower()
+        if not name or not name[0:1].isalpha():
+            i = start + 1
+            continue
+
+        quote = b""
+        while j < n:
+            char = data[j : j + 1]
+            if quote:
+                if char == quote:
+                    quote = b""
+            elif char in (b'"', b"'"):
+                quote = char
+            elif char == b">":
+                break
+            j += 1
+        if j >= n:
+            return
+
+        end = j + 1
+        yield closing, name, start, end
+        i = end
+        if closing:
+            continue
+        if name == b"plaintext":
+            return
+        if name in RAW_TEXT_TAGS:
+            close = re.search(
+                rb"</" + re.escape(name) + rb"(?=[\s/>])", data[end:], re.IGNORECASE
+            )
+            if close is None:
+                return
+            i = end + close.start()
+
+
+def html_injection_points(data: bytes) -> tuple[int | None, int | None, int | None]:
+    """Where the style and the bar block belong in a page.
+
+    Returns the end of the first real <body ...> tag, the start of the last
+    real </head>, and the start of the last real </body>. Any of them is None
+    when the document does not contain that tag.
+    """
+    body_open = None
+    head_close = None
+    body_close = None
+    for closing, name, start, end in iter_html_tags(data):
+        if closing:
+            if name == b"head":
+                head_close = start
+            elif name == b"body":
+                body_close = start
+        elif name == b"body" and body_open is None:
+            body_open = end
+    return body_open, head_close, body_close
+
+
 def inject_html(data: bytes, token: str = "", version: str = "") -> bytes:
     """Insert the bar's shell and scripts into a page.
 
     The stylesheet is metadata content, so it goes at the end of <head>.
     The rest of the block goes immediately after <body> so the bar is present
     at first paint instead of popping in. That placement is a trade-off: the
-    injected offset div becomes body's first child, so a page rule like
+    injected bar host is body's first element child, so a page rule like
     `body > :first-child` matches it instead of the page's own first element,
     and sibling rules built on it skip over the rest of Ribbon's markup. Pages
-    that style their first child by position should use a class. Pages with
-    no <head> fall back to keeping the stylesheet in the body block.
+    that style their first child by position should use a class. The page
+    offset is a generated box on <html>, not a body child, so it stays out of
+    the page's flex and grid layout. Pages with no <head> fall back to keeping
+    the stylesheet in the body block.
     """
     if b"data-ribbon-host" in data or b"/__ribbon/ribbon.js" in data:
         return data
@@ -3290,27 +2158,25 @@ def inject_html(data: bytes, token: str = "", version: str = "") -> bytes:
     )
     inject = (
         bar_shell_html()
-        + PAGE_OFFSET_MARKUP.encode("utf-8")
         + BOOT_SCRIPT
         + b'<script src="' + asset_url("bar.js", version).encode("utf-8") + b'" defer></script>'
         + b'<script src="' + asset_url("ribbon.js", version).encode("utf-8") + b'"'
         + attrs
         + b" defer></script>"
     )
-    heads = list(HEAD_CLOSE_RE.finditer(data))
-    if heads:
-        index = heads[-1].start()
-        data = data[:index] + style + data[index:]
+    body_open, head_close, body_close = html_injection_points(data)
+    if head_close is not None:
+        data = data[:head_close] + style + data[head_close:]
+        if body_open is not None and head_close <= body_open:
+            body_open += len(style)
+        if body_close is not None and head_close <= body_close:
+            body_close += len(style)
     else:
         inject = style + inject
-    opening = BODY_OPEN_RE.search(data)
-    if opening:
-        index = opening.end()
-        return data[:index] + inject + data[index:]
-    matches = list(BODY_CLOSE_RE.finditer(data))
-    if matches:
-        index = matches[-1].start()
-        return data[:index] + inject + data[index:]
+    if body_open is not None:
+        return data[:body_open] + inject + data[body_open:]
+    if body_close is not None:
+        return data[:body_close] + inject + data[body_close:]
     return data + inject
 
 
@@ -3347,11 +2213,18 @@ def save_state(root: Path, state: dict) -> None:
     path = state_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    temp.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(temp, path)
+    try:
+        # 0600: the state names folders the user has opened. os.replace keeps
+        # the temp file's mode, so the final file is private too.
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+        os.replace(temp, path)
+    finally:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
 
 
 def public_state(state: dict) -> dict:
@@ -3380,14 +2253,45 @@ def apply_signal(state: dict, key: str, signal: str) -> dict:
     return state
 
 
+def hidden_path(raw_path: str) -> bool:
+    """True when a request path names a dot entry.
+
+    Ribbon serves a folder of apps, never dotfiles: .git carries cloneable
+    history and remote URLs, and .env carries secrets. Decode first, because
+    translate_path() decodes too, so %2e must not slip past the check.
+    """
+    try:
+        decoded = unquote(raw_path, errors="surrogatepass")
+    except UnicodeDecodeError:
+        decoded = unquote(raw_path)
+    return any(part.startswith(".") for part in decoded.split("/"))
+
+
+def contained_target(root: Path, target: Path) -> Path | None:
+    """Resolve target, or return None when a symlink leads outside root."""
+    try:
+        resolved = target.resolve()
+        resolved.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return resolved
+
+
 class RibbonHandler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    timeout = KEEPALIVE_TIMEOUT
+    timeout = HANDLER_TIMEOUT
     root: Path = APP_DIR.parent
     include_untitled: bool = False
     token: str = ""
     write_enabled: bool = False
     allowed_origins: ClassVar[set[str]] = set()
+    # BaseHTTPRequestHandler would send "SimpleHTTP/0.6 Python/3.15.2". The
+    # interpreter version is not the client's business.
+    server_version = "Ribbon"
+    sys_version = ""
+
+    def version_string(self) -> str:
+        return self.server_version
 
     def log_message(self, fmt: str, *args) -> None:
         if getattr(self.server, "verbose", False):
@@ -3400,6 +2304,8 @@ class RibbonHandler(SimpleHTTPRequestHandler):
         self._handle(head=True)
 
     def do_POST(self) -> None:
+        from git_actions import run_git_action
+
         route = urlsplit(self.path).path
         if route not in ("/__ribbon/git", "/__ribbon/signal", "/__ribbon/delete"):
             self.send_error(404, "Not found")
@@ -3477,6 +2383,13 @@ class RibbonHandler(SimpleHTTPRequestHandler):
         self._send_json(payload, 200 if result.get("ok") else 409)
 
     def _post_guard(self) -> bool:
+        """Reject other websites, not other projects.
+
+        Every project is served from this origin and can read the token from
+        its own page or from manifest.json. This guard stops a page on another
+        site from driving the action API; it cannot tell a project script from
+        the bar. See "Trust boundary" in AGENTS.md.
+        """
         origin = self.headers.get("Origin")
         if origin and origin not in self.allowed_origins:
             self._send_json(
@@ -3608,7 +2521,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
 
     def _response_body(self, payload: bytes) -> tuple[bytes, bool]:
         """The bytes to send, plus whether they carry a gzip header."""
-        if payload and self._accepts_gzip():
+        if len(payload) >= GZIP_MIN_BYTES and self._accepts_gzip():
             compressor = zlib.compressobj(6, zlib.DEFLATED, 16 + zlib.MAX_WBITS)
             return compressor.compress(payload) + compressor.flush(), True
         return payload, False
@@ -3688,6 +2601,10 @@ class RibbonHandler(SimpleHTTPRequestHandler):
     def _handle(self, head: bool) -> None:
         raw_path = urlsplit(self.path).path
 
+        if hidden_path(raw_path):
+            self.send_error(404, "File not found")
+            return
+
         if raw_path.startswith(CARD_ROUTE):
             return self._serve_card(raw_path, head)
 
@@ -3708,7 +2625,12 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 return
 
-        target = Path(self.translate_path(raw_path))
+        target = contained_target(
+            self.root.resolve(), Path(self.translate_path(raw_path))
+        )
+        if target is None:
+            self.send_error(404, "File not found")
+            return
 
         if target.is_dir():
             if not raw_path.endswith("/"):
@@ -3926,28 +2848,37 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             self.send_error(500, "Ribbon asset missing")
             return
 
-        body, gzipped = self._response_body(payload)
         if name in STATIC_ASSETS:
-            # The injected URLs carry asset_version(), so a changed file gets
-            # a new URL. Cache the old one for a year instead of asking the
-            # browser to check back on every page.
-            etag = self._etag_for(body)
+            # Only a URL carrying the current asset_version() may be pinned:
+            # a rebuilt file gets a new ?v=, so the old URL never changes.
+            # A saved page or hand-written reference has no query string and
+            # must revalidate instead of staying frozen for a year.
+            requested = (parse_qs(urlsplit(self.path).query).get("v") or [""])[0]
+            if requested == asset_version():
+                cache_control = "public, max-age=31536000, immutable"
+            else:
+                cache_control = "no-cache"
+            # Hash the source bytes, before gzip, so a revalidation can answer
+            # 304 without paying for a compression it would throw away.
+            etag = self._etag_for(payload)
             if self._etag_matches(etag):
                 self.send_response(304)
                 self.send_header("ETag", etag)
-                self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                self.send_header("Cache-Control", cache_control)
                 self.send_header("Vary", "Accept-Encoding")
                 self.end_headers()
                 return
+            body, gzipped = self._response_body(payload)
             self._write_body(
                 body,
                 content_type,
-                "public, max-age=31536000, immutable",
+                cache_control,
                 head,
                 etag=etag,
                 gzipped=gzipped,
             )
             return
+        body, gzipped = self._response_body(payload)
         self._write_body(
             body,
             content_type,
@@ -3955,6 +2886,20 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             head,
             gzipped=gzipped,
         )
+
+
+class RibbonHTTPServer(ThreadingHTTPServer):
+    address_family = socket.AF_INET
+
+
+class RibbonHTTPServerV6(RibbonHTTPServer):
+    address_family = socket.AF_INET6
+
+
+def url_host(host: str) -> str:
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -3992,7 +2937,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--port", type=int, default=8765, help="first port to try (default: 8765)"
     )
     server.add_argument(
-        "--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)"
+        "--host",
+        default="127.0.0.1",
+        help=(
+            "address to listen on (default: 127.0.0.1). Any other address lets "
+            "other devices on the network read every project, with no password"
+        ),
     )
     server.add_argument(
         "--app",
@@ -4069,7 +3019,15 @@ def main() -> None:
     if args.app is not None and args.list:
         parser.error("--app only makes sense when starting the server")
 
-    root = Path(args.root).expanduser().resolve() if args.root else default_root()
+    if args.root:
+        root = Path(args.root).expanduser().resolve()
+    else:
+        root = default_root()
+        if root is None:
+            parser.error(
+                "could not find a projects folder near ribbon.py. "
+                "Pick one with --root FOLDER, for example --root ~/my-projects"
+            )
     if not root.is_dir():
         parser.error(f"that folder does not exist: {root}")
 
@@ -4112,9 +3070,10 @@ def main() -> None:
     RibbonHandler.include_untitled = args.include_untitled
 
     httpd = None
+    server_cls = RibbonHTTPServerV6 if ":" in args.host else RibbonHTTPServer
     for port in range(args.port, args.port + 20):
         try:
-            httpd = ThreadingHTTPServer((args.host, port), handler)
+            httpd = server_cls((args.host, port), handler)
             break
         except OSError:
             continue
@@ -4124,6 +3083,7 @@ def main() -> None:
     httpd.verbose = args.verbose  # type: ignore[attr-defined]
     chosen_port = httpd.server_address[1]
     host_for_url = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
+    host_for_url = url_host(host_for_url)
     base = f"http://{host_for_url}:{chosen_port}/"
 
     write_enabled = (not args.no_git_actions) and args.host in (
@@ -4139,6 +3099,15 @@ def main() -> None:
         origins.add(f"http://127.0.0.1:{chosen_port}")
         origins.add(f"http://localhost:{chosen_port}")
     RibbonHandler.allowed_origins = origins
+
+    if not local_host:
+        print()
+        print("  WARNING: Ribbon is listening beyond this computer.")
+        print(f"  Address {args.host}, port {chosen_port}.")
+        print(f"  Anyone who can reach it can read every project under {root},")
+        print("  plus the app list and Git status. There is no password.")
+        print("  Use a network you trust. Git actions, deletes, and saved state")
+        print("  stay off.")
 
     if args.app is not None:
         launch = base + apps[args.app - 1]["url"].lstrip("/")

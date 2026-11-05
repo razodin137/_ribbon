@@ -50,6 +50,65 @@
     return haystack.indexOf(query) !== -1
   }
 
+  const FOCUSABLE_SELECTOR = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(",")
+
+  // Focusable descendants of a modal, in tab order. Fields in a hidden
+  // section have no client rects, so they drop out as the panel changes.
+  function focusableWithin(container) {
+    if (!container || typeof container.querySelectorAll !== "function") return []
+    const nodes = container.querySelectorAll(FOCUSABLE_SELECTOR)
+    const found = []
+    for (let i = 0; i < nodes.length; i += 1) {
+      const node = nodes[i]
+      if (node.hidden) continue
+      if (
+        typeof node.getClientRects === "function" &&
+        node.getClientRects().length === 0
+      ) {
+        continue
+      }
+      found.push(node)
+    }
+    return found
+  }
+
+  function focusOwner(container) {
+    const rootNode = container.getRootNode ? container.getRootNode() : null
+    return (rootNode && rootNode.activeElement) || null
+  }
+
+  // Keep Tab inside an open modal. Returns true when the key was handled.
+  // Wrapping at either end also recovers focus if it escaped the panel.
+  function trapTab(event, container) {
+    if (!event || event.key !== "Tab" || !container) return false
+    const items = focusableWithin(container)
+    if (!items.length) {
+      event.preventDefault()
+      return true
+    }
+    const first = items[0]
+    const last = items[items.length - 1]
+    const active = focusOwner(container)
+    const inside = active === container || container.contains(active)
+    if (event.shiftKey) {
+      if (!inside || active === first) {
+        event.preventDefault()
+        last.focus()
+      }
+    } else if (!inside || active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+    return true
+  }
+
   function defaultRepoName(app) {
     const path = app ? app.path || app.dir || app.url || "" : ""
     let name = path.split("/").filter(Boolean).pop() || (app && app.title) || "app"
@@ -176,6 +235,7 @@
     let tipPinned = false
     let tipTimer = 0
     let tipIsOpen = false
+    let tipLed = ""
     let gitToken = ""
     let gitDetail = null
     let gitAction = null
@@ -512,8 +572,9 @@
       )
     }
 
-    function openTip(pin) {
+    function openTip(pin, led) {
       if (pin) tipPinned = true
+      if (led) tipLed = led
       tipIsOpen = true
       refs.ledTip.classList.add("is-open")
       refs.ledTip.setAttribute("aria-hidden", "false")
@@ -529,6 +590,7 @@
     function closeTip() {
       tipPinned = false
       tipIsOpen = false
+      tipLed = ""
       refs.ledTip.classList.remove("is-open")
       refs.ledTip.setAttribute("aria-hidden", "true")
       if (tipTimer) {
@@ -784,6 +846,7 @@
       gitReturnFocus = root.activeElement || doc.activeElement
       refs.gitOverlay.hidden = false
       gitBusy = false
+      refs.gitCancel.focus()
       refs.gitStatus.className = "git-status"
       refs.gitStatus.textContent = ""
       refs.gitOutput.hidden = true
@@ -1039,7 +1102,17 @@
         : null
       if (!button) return
       event.stopPropagation()
-      openGitPanel(button.getAttribute("data-led"))
+      const name = button.getAttribute("data-led")
+      if (!hoverCapable) {
+        if (tipIsOpen && tipLed === name) {
+          closeTip()
+          openGitPanel(name)
+        } else {
+          openTip(true, name)
+        }
+        return
+      }
+      openGitPanel(name)
     })
     refs.ledsWrap.addEventListener("pointerenter", function () {
       if (hoverCapable) openTip(false)
@@ -1067,6 +1140,7 @@
         if (event.target === refs.gitOverlay) closeGitPanel()
       })
       refs.gitOverlay.addEventListener("keydown", function (event) {
+        if (trapTab(event, refs.gitOverlay)) return
         if (event.key !== "Escape") return
         event.preventDefault()
         closeGitPanel()
@@ -1095,7 +1169,6 @@
       },
       setStale: function (next) {
         stale = !!next
-        if (menuOpen) renderMenu()
       },
       setIndex: function (next) {
         index = typeof next === "number" ? next : -1
@@ -1127,6 +1200,7 @@
     pad: pad,
     matchesQuery: matchesQuery,
     defaultRepoName: defaultRepoName,
+    trapTab: trapTab,
     gitLights: gitLights,
     gitWorkRank: gitWorkRank,
     decideGitAction: decideGitAction,

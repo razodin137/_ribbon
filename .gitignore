@@ -1,4 +1,5 @@
 node_modules/
 __pycache__/
 .ruff_cache/
+.scratch*/
 .DS_Store

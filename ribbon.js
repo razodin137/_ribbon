@@ -28,7 +28,6 @@
 
   const STORAGE_KEY = "ribbon:hidden"
   const SCROLL_KEY = "ribbon:scroll"
-  const BAR_HEIGHT = 40
 
   function boot() {
     if (document.body) {
@@ -52,6 +51,10 @@
     const cached = readCachedApps()
     let mounted = null
     let refreshing = null
+    // Focus and visibility events arrive in bursts when the user alt-tabs, so
+    // ignore them for a moment after the last manifest fetch.
+    const REFRESH_MIN_MS = 2000
+    let lastRefresh = 0
 
     function applyManifest(data) {
       const apps = Array.isArray(data) ? data : data && data.apps
@@ -72,6 +75,7 @@
     // page comes back into view or its menu opens.
     function refresh() {
       if (refreshing) return refreshing
+      lastRefresh = Date.now()
       refreshing = fetch(manifestUrl, { cache: "no-store" })
         .then(function (response) {
           if (!response.ok) throw new Error("HTTP " + response.status)
@@ -88,7 +92,9 @@
     }
 
     function refreshIfVisible() {
-      if (!document.hidden) refresh()
+      if (document.hidden) return
+      if (Date.now() - lastRefresh < REFRESH_MIN_MS) return
+      refresh()
     }
 
     if (cached) mounted = mount(cached, null, refresh, true)
@@ -98,7 +104,7 @@
       if (mounted) mounted.setStale(false)
     })
     document.addEventListener("visibilitychange", refreshIfVisible)
-    window.addEventListener("focus", refresh)
+    window.addEventListener("focus", refreshIfVisible)
   }
 
   function readCachedApps() {
@@ -433,9 +439,12 @@
     let topOffset = null
     const lastTargets = new Map()
 
-    // The server paints a spacer at the top of the page, so the app's own
+    // The server reserves a strip at the top of the page, so the app's own
     // header is not covered before this file runs. Hiding the bar by hand
-    // hides the spacer too; the attribute also drives the bar's first paint.
+    // removes the strip too; the attribute also drives the bar's first paint.
+    // The height comes from the host, so it cannot drift from the server.
+    const barHeight = Number(host.getAttribute("data-ribbon-height")) || 0
+
     function setTopOffset(on, compensate) {
       if (topOffset === on) return
       const before = compensate ? scrollY() : 0
@@ -444,7 +453,7 @@
       if (!compensate || before === 0) return
 
       // Keep the page still when the strip is added or removed by hand.
-      const after = on ? before + BAR_HEIGHT : Math.max(0, before - BAR_HEIGHT)
+      const after = on ? before + barHeight : Math.max(0, before - barHeight)
       if (after === before) return
       const root = document.documentElement
       const behavior = root.style.getPropertyValue("scroll-behavior")
@@ -1090,6 +1099,7 @@
       if (event.target === deleteOverlay) closeDeletePanel(true)
     })
     deleteOverlay.addEventListener("keydown", function (event) {
+      if (bar.trapTab(event, deleteOverlay)) return
       if (event.key === "Escape") {
         event.preventDefault()
         closeDeletePanel(true)
@@ -1262,7 +1272,7 @@
     applyState()
     // The boot script hid the shell before this file ran. From here the
     // is-gone/is-shown classes own the state; the hidden attribute stays so
-    // the spacer matches the bar while the bar is hidden by hand.
+    // the offset matches the bar while the bar is hidden by hand.
     host.removeAttribute("data-ribbon-scrolled")
     if (!openedRecorded) {
       openedRecorded = true

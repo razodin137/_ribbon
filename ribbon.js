@@ -1,12 +1,16 @@
 /* Ribbon — a floating, auto-hiding switcher for a folder of HTML apps.
  *
- * Normally injected by ribbon.py. It can also be included by hand:
+ * Normally injected by ribbon.py. It can also be included by hand, after
+ * bar.js:
+ *   <script src="/__ribbon/bar.js" defer></script>
  *   <script src="/__ribbon/ribbon.js" defer></script>
- * or, with no server, provide the list yourself before the script runs:
+ * or, with no server, provide the list yourself before the scripts run:
  *   window.__RIBBON_APPS__ = [{ url: "/app/", title: "App" }];
  */
 (function () {
   "use strict"
+
+  const bar = window.__RIBBON_BAR__
 
   if (window.__RIBBON_MOUNTED__) return
   if (window.self !== window.top) return
@@ -337,7 +341,7 @@
         "</div>" +
       "</div>"
 
-    const bar = shadow.querySelector(".bar")
+    const barEl = shadow.querySelector(".bar")
     const countEl = shadow.querySelector(".count")
     const titleButton = shadow.querySelector(".title")
     const titleText = shadow.querySelector(".title-text")
@@ -463,7 +467,7 @@
     const storedDeck = readDeck()
     if (storedDeck && storedDeck.channel === activeChannel) {
       const known = {}
-      for (let i = 0; i < apps.length; i += 1) known[appKey(apps[i])] = true
+      for (let i = 0; i < apps.length; i += 1) known[bar.appKey(apps[i])] = true
       deck = (storedDeck.order || []).filter(function (key) {
         return known[key]
       })
@@ -484,13 +488,13 @@
       index = current.index
       appIndex = {}
       for (let i = 0; i < apps.length; i += 1) {
-        appIndex[appKey(apps[i])] = apps[i]
+        appIndex[bar.appKey(apps[i])] = apps[i]
       }
       titleText.textContent = current.title
       titleButton.title = "Show all apps"
       menuCurrentTitle.textContent = current.title
-      countEl.textContent = (index >= 0 ? pad(index + 1, apps.length) : "—") +
-        " / " + pad(apps.length, apps.length)
+      countEl.textContent = (index >= 0 ? bar.pad(index + 1, apps.length) : "—") +
+        " / " + bar.pad(apps.length, apps.length)
       setGit(apps[index] && apps[index].git)
       updateCurrentStar()
       updateCurrentMeta()
@@ -567,9 +571,9 @@
         closeTip()
         closeMenu(false)
       }
-      bar.classList.toggle("is-gone", gone)
-      if (gone) bar.setAttribute("inert", "")
-      else bar.removeAttribute("inert")
+      barEl.classList.toggle("is-gone", gone)
+      if (gone) barEl.setAttribute("inert", "")
+      else barEl.removeAttribute("inert")
       peekEl.classList.toggle("is-shown", manualHidden)
       peekEl.tabIndex = manualHidden ? 0 : -1
     }
@@ -600,7 +604,7 @@
     function drift() {
       if (apps.length < 2) return
       if (!ensureDeck()) return
-      const current = appKey(currentApp())
+      const current = bar.appKey(currentApp())
       let key = deck[deckCursor]
       let guard = 0
       while (key === current && guard < deck.length) {
@@ -638,7 +642,7 @@
         if (!channelMatches(apps[i], channel)) continue
         const weight = driftWeight(apps[i], rng)
         if (weight > 0) {
-          items.push({ key: appKey(apps[i]), weight: weight })
+          items.push({ key: bar.appKey(apps[i]), weight: weight })
         }
       }
       const order = []
@@ -670,9 +674,9 @@
     }
 
     function driftWeight(app, rng) {
-      const key = appKey(app)
+      const key = bar.appKey(app)
       const entry = signals[key] || {}
-      if (isParked(entry)) return 0
+      if (bar.isParked(entry)) return 0
       const git = app.git || {}
       const state = git.state || ""
       let weight = 1
@@ -737,18 +741,10 @@
     }
 
     function isDusty(app) {
-      const entry = signals[appKey(app)] || {}
+      const entry = signals[bar.appKey(app)] || {}
       if (!entry.last_opened) return true
       const opened = Date.parse(entry.last_opened)
       return !opened || Date.now() - opened > 30 * 86400000
-    }
-
-    function isParked(entry) {
-      return !!(
-        entry &&
-        entry.parked_until &&
-        Date.parse(entry.parked_until) > Date.now()
-      )
     }
 
     function appByKey(key) {
@@ -776,10 +772,6 @@
       location.reload()
     }
 
-    function appKey(app) {
-      return app ? app.dir || app.path || app.url || "" : ""
-    }
-
     function readFavorites() {
       try {
         const stored = JSON.parse(localStorage.getItem("ribbon:favorites") || "[]")
@@ -799,7 +791,7 @@
     }
 
     function isFavorite(app) {
-      return !!app && favorites.has(appKey(app))
+      return !!app && favorites.has(bar.appKey(app))
     }
 
     function currentApp() {
@@ -924,7 +916,7 @@
 
     function updateCurrentMeta() {
       const app = currentApp()
-      const entry = app ? signals[appKey(app)] || {} : {}
+      const entry = app ? signals[bar.appKey(app)] || {} : {}
       const bits = []
       if (app) {
         if (entry.last_opened) {
@@ -937,11 +929,11 @@
           bits.push(entry.opens + (entry.opens === 1 ? " open" : " opens"))
         }
         if (entry.keep) bits.push("kept")
-        if (isParked(entry)) bits.push("parked")
+        if (bar.isParked(entry)) bits.push("parked")
       }
       menuCurrentMeta.textContent = bits.join(" · ")
       const keep = !!entry.keep
-      const park = isParked(entry)
+      const park = bar.isParked(entry)
       keepButton.disabled = !app
       parkButton.disabled = !app
       keepButton.setAttribute("aria-pressed", keep ? "true" : "false")
@@ -981,7 +973,7 @@
     function signal(name, value) {
       const app = currentApp()
       if (!app) return
-      const key = appKey(app)
+      const key = bar.appKey(app)
       const entry = Object.assign({}, signals[key] || {})
       const now = new Date()
       if (name === "open") {
@@ -1031,56 +1023,8 @@
         .catch(function () { /* the local signal stands */ })
     }
 
-    const LED_WORK = { ok: 0, warn: 1, bad: 2, off: 3 }
-
-    function gitLights(git) {
-      const repo = !!(git && git.repo)
-      const state = (git && git.state) || ""
-      const dirty = !!(git && (git.dirty || (git.files && git.files.length)))
-      const count = git && typeof git.dirty_count === "number" ? git.dirty_count : dirty ? 1 : 0
-      const hasRemote = !!(git && git.has_remote)
-      let remoteClass = "off"
-      if (repo && hasRemote) {
-        if (state === "ahead" || state === "diverged" || state === "conflicted") {
-          remoteClass = "bad"
-        } else if (
-          state === "behind" ||
-          state === "no-upstream" ||
-          state === "detached" ||
-          state === "no-commits"
-        ) {
-          remoteClass = "warn"
-        } else {
-          remoteClass = "ok"
-        }
-      }
-      return {
-        repo: repo,
-        dirty: dirty,
-        count: count,
-        hasRemote: hasRemote,
-        repoClass: repo ? "ok" : "off",
-        changesClass: !repo ? "off" : dirty ? "warn" : "ok",
-        remoteClass: remoteClass
-      }
-    }
-
-    // Fewest green lights first, then the worst remaining light. This puts
-    // apps that need the most Git work at the top of the app menu.
-    function gitWorkRank(app) {
-      const lights = gitLights(app && app.git)
-      const classes = [ lights.repoClass, lights.changesClass, lights.remoteClass ]
-      let green = 0
-      let severity = 0
-      for (let i = 0; i < classes.length; i += 1) {
-        if (classes[i] === "ok") green += 1
-        else severity += LED_WORK[classes[i]]
-      }
-      return { green: green, severity: severity }
-    }
-
     function menuLights(git) {
-      const lights = gitLights(git)
+      const lights = bar.gitLights(git)
       const classes = [ lights.repoClass, lights.changesClass, lights.remoteClass ]
       const wrap = document.createElement("span")
       wrap.className = "menu-leds"
@@ -1092,9 +1036,9 @@
         wrap.appendChild(dot)
       }
       const label = [
-        repoTip(git),
-        changesTip(git, lights.dirty, lights.count),
-        remoteTip(git, lights.hasRemote)
+        bar.repoTip(git),
+        bar.changesTip(git, lights.dirty, lights.count),
+        bar.remoteTip(git, lights.hasRemote)
       ].join(". ")
       wrap.setAttribute("aria-label", label)
       wrap.title = label
@@ -1124,11 +1068,11 @@
         title.appendChild(glyph)
       }
       title.appendChild(document.createTextNode(app.title || "Untitled"))
-      const entry = signals[appKey(app)] || {}
-      if (entry.keep || isParked(entry)) {
+      const entry = signals[bar.appKey(app)] || {}
+      if (entry.keep || bar.isParked(entry)) {
         const flag = document.createElement("span")
         flag.className = "menu-app-flag"
-        flag.textContent = isParked(entry) ? "parked" : "kept"
+        flag.textContent = bar.isParked(entry) ? "parked" : "kept"
         title.appendChild(flag)
       }
 
@@ -1143,7 +1087,7 @@
       const star = document.createElement("button")
       star.type = "button"
       star.className = "row-star"
-      star.setAttribute("data-star", appKey(app))
+      star.setAttribute("data-star", bar.appKey(app))
       star.setAttribute("aria-pressed", favorite ? "true" : "false")
       star.title = favorite ? "Remove from favorites" : "Add to favorites"
       star.setAttribute(
@@ -1161,25 +1105,17 @@
         const remove = document.createElement("button")
         remove.type = "button"
         remove.className = "row-delete"
-        remove.setAttribute("data-delete", appKey(app))
+        remove.setAttribute("data-delete", bar.appKey(app))
         remove.setAttribute("aria-haspopup", "dialog")
         remove.title = "Delete this folder…"
         remove.setAttribute(
           "aria-label",
-          "Delete " + (app.title || appKey(app)) + " folder"
+          "Delete " + (app.title || bar.appKey(app)) + " folder"
         )
         remove.textContent = "✕"
         row.appendChild(remove)
       }
       return row
-    }
-
-    function matchesQuery(app, query) {
-      if (!query) return true
-      const haystack = String(app.title || "").toLowerCase() +
-        " " + String(app.path || app.dir || "").toLowerCase() +
-        " " + String(app.type || "").toLowerCase()
-      return haystack.indexOf(query) !== -1
     }
 
     function buildChannels() {
@@ -1254,13 +1190,13 @@
 
       apps.forEach(function (app, appIndex) {
         if (!channelMatches(app, activeChannel)) return
-        if (!matchesQuery(app, needle)) return
+        if (!bar.matchesQuery(app, needle)) return
         rows.push({ app: app, appIndex: appIndex })
       })
 
       rows.sort(function (a, b) {
-        const rankA = gitWorkRank(a.app)
-        const rankB = gitWorkRank(b.app)
+        const rankA = bar.gitWorkRank(a.app)
+        const rankB = bar.gitWorkRank(b.app)
         if (rankA.green !== rankB.green) return rankA.green - rankB.green
         if (rankA.severity !== rankB.severity) return rankB.severity - rankA.severity
         return a.appIndex - b.appIndex
@@ -1326,7 +1262,7 @@
     }
 
     function toggleFavorite(app, focusStar) {
-      const key = appKey(app)
+      const key = bar.appKey(app)
       if (!key) return
       if (favorites.has(key)) favorites.delete(key)
       else favorites.add(key)
@@ -1345,9 +1281,9 @@
     }
 
     function removeDeletedApp(app) {
-      const key = appKey(app)
+      const key = bar.appKey(app)
       apps = apps.filter(function (item) {
-        return appKey(item) !== key
+        return bar.appKey(item) !== key
       })
       favorites.delete(key)
       saveFavorites()
@@ -1371,7 +1307,7 @@
       deleteTarget = app
       deleteReady = false
       deleteOverlay.hidden = false
-      deleteTitle.textContent = app.title || appKey(app)
+      deleteTitle.textContent = app.title || bar.appKey(app)
       deletePath.textContent = "/" + (app.path || app.dir || "")
       deleteCommand.textContent = "Working out the command…"
       deleteOutput.hidden = true
@@ -1446,11 +1382,11 @@
     function confirmDelete() {
       if (!deleteTarget || deleteBusy || !deleteReady) return
       const app = deleteTarget
-      const key = appKey(app)
+      const key = bar.appKey(app)
       const dir = app.path || app.dir || ""
-      const wasCurrent = index >= 0 && appKey(apps[index]) === key
+      const wasCurrent = index >= 0 && bar.appKey(apps[index]) === key
       const fallback = apps.filter(function (item) {
-        return appKey(item) !== key
+        return bar.appKey(item) !== key
       })[0] || null
 
       setDeleteBusy(true)
@@ -1501,33 +1437,6 @@
         })
     }
 
-    function defaultRepoName() {
-      const app = currentApp()
-      const path = app ? app.path || app.dir || "" : ""
-      let name = path.split("/").pop() || (app && app.title) || "app"
-      name = name.replace(/^\d{4}-\d{2}-\d{2}-/, "")
-      name = name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "")
-      return (name || "app").slice(0, 100)
-    }
-
-    function decideGitAction(detail, focus) {
-      if (!detail || !detail.repo) return "init"
-      if (detail.state === "detached" || detail.state === "conflicted") return "info"
-      const dirty = !!(detail.files && detail.files.length)
-      const hasRemote = !!detail.has_remote
-      const needsPush = hasRemote && detail.state !== "diverged" && (detail.ahead > 0 || !detail.upstream)
-      if (focus === "changes" && dirty) return "commit"
-      if (focus === "remote") {
-        if (!hasRemote) return detail.state === "no-commits" && !dirty ? "info" : "remote"
-        if (needsPush) return "push"
-        if (!dirty && /github\.com[:/]/i.test(detail.remote_url || "")) return "pages"
-      }
-      if (dirty) return "commit"
-      if (!hasRemote) return detail.state === "no-commits" ? "info" : "remote"
-      if (needsPush) return "push"
-      return "info"
-    }
-
     function summaryRow(label, value) {
       const row = document.createElement("div")
       row.className = "git-summary-row"
@@ -1570,7 +1479,7 @@
 
     function renderGitPanel(detail, focus, success, extra) {
       gitDetail = detail
-      gitAction = decideGitAction(detail, focus)
+      gitAction = bar.decideGitAction(detail, focus)
       gitBlocked = false
       if (
         gitAction === "pages" &&
@@ -1677,7 +1586,7 @@
           : "Update " + ((app && app.title) || detail.branch || "app")
       }
       gitNameField.hidden = gitAction !== "remote"
-      if (!gitNameField.hidden) gitName.value = defaultRepoName()
+      if (!gitNameField.hidden) gitName.value = bar.defaultRepoName(currentApp())
       gitVisibilityField.hidden = gitAction !== "remote"
       if (!gitVisibilityField.hidden) {
         for (let i = 0; i < gitVisibilityInputs.length; i += 1) {
@@ -1943,7 +1852,7 @@
     }
 
     function setGit(git) {
-      const lights = gitLights(git)
+      const lights = bar.gitLights(git)
 
       ledRepo.className = "led " + lights.repoClass
       ledChanges.className = "led " + lights.changesClass
@@ -1952,9 +1861,9 @@
       tipChangesDot.className = "led " + lights.changesClass
       tipRemoteDot.className = "led " + lights.remoteClass
 
-      const repoText = repoTip(git)
-      const changesText = changesTip(git, lights.dirty, lights.count)
-      const remoteText = remoteTip(git, lights.hasRemote)
+      const repoText = bar.repoTip(git)
+      const changesText = bar.changesTip(git, lights.dirty, lights.count)
+      const remoteText = bar.remoteTip(git, lights.hasRemote)
       tipRepoText.textContent = repoText
       tipChangesText.textContent = changesText
       tipRemoteText.textContent = remoteText
@@ -1983,38 +1892,6 @@
           return
         }
       }
-    }
-
-    function repoTip(git) {
-      if (!git || !git.repo) {
-        return git && git.state === "error"
-          ? "Git status unavailable"
-          : "Not a Git repository"
-      }
-      return "Git repository" + (git.branch ? " — " + git.branch : "")
-    }
-
-    function changesTip(git, dirty, count) {
-      if (!git || !git.repo) return "No changes to track"
-      if (dirty) {
-        const n = count || 1
-        return n + " uncommitted file" + (n === 1 ? "" : "s")
-      }
-      return git.state === "no-commits" ? "No commits yet" : "No uncommitted changes"
-    }
-
-    function remoteTip(git, hasRemote) {
-      if (!git || !git.repo) return "No remote"
-      if (!hasRemote) return "No remote"
-      if (git.state === "conflicted") return "Conflicts to resolve"
-      if (git.state === "no-commits") return "No commits yet"
-      if (git.state === "detached") return "Detached HEAD"
-      const bits = []
-      if (git.ahead) bits.push(git.ahead + " to push")
-      if (git.behind) bits.push(git.behind + " behind")
-      if (bits.length) return bits.join(" · ")
-      if (git.state === "no-upstream") return "Remote set, no upstream"
-      return "Up to date" + (git.upstream ? " with " + git.upstream : "")
     }
 
     function openTip(pin) {
@@ -2088,12 +1965,12 @@
       starCurrent.focus()
     })
     keepButton.addEventListener("click", function () {
-      const entry = signals[appKey(currentApp())] || {}
+      const entry = signals[bar.appKey(currentApp())] || {}
       signal("keep", !entry.keep)
     })
     parkButton.addEventListener("click", function () {
-      const entry = signals[appKey(currentApp())] || {}
-      signal("park", !isParked(entry))
+      const entry = signals[bar.appKey(currentApp())] || {}
+      signal("park", !bar.isParked(entry))
     })
     menuChannels.addEventListener("click", function (event) {
       const chip = event.target && event.target.closest
@@ -2141,7 +2018,7 @@
       if (remove) {
         const key = remove.getAttribute("data-delete")
         for (let i = 0; i < apps.length; i += 1) {
-          if (appKey(apps[i]) === key) {
+          if (bar.appKey(apps[i]) === key) {
             openDeletePanel(apps[i])
             break
           }
@@ -2154,7 +2031,7 @@
         : null
       if (star) {
         for (let i = 0; i < apps.length; i += 1) {
-          if (appKey(apps[i]) === star.getAttribute("data-star")) {
+          if (bar.appKey(apps[i]) === star.getAttribute("data-star")) {
             toggleFavorite(apps[i], true)
             break
           }
@@ -2334,11 +2211,11 @@
         if (event.shiftKey) reloadApp()
         else drift()
       } else if (key === "k" || key === "K") {
-        const entry = signals[appKey(currentApp())] || {}
+        const entry = signals[bar.appKey(currentApp())] || {}
         signal("keep", !entry.keep)
       } else if (key === "p" || key === "P") {
-        const entry = signals[appKey(currentApp())] || {}
-        signal("park", !isParked(entry))
+        const entry = signals[bar.appKey(currentApp())] || {}
+        signal("park", !bar.isParked(entry))
       } else if (key === "h" || key === "H") toggleHidden()
       else handled = false
 
@@ -2372,12 +2249,12 @@
         setCardOpen(arguments.length ? !!on : !cardOpen)
       },
       keep: function (on) {
-        const entry = signals[appKey(currentApp())] || {}
+        const entry = signals[bar.appKey(currentApp())] || {}
         signal("keep", typeof on === "boolean" ? on : !entry.keep)
       },
       park: function (on) {
-        const entry = signals[appKey(currentApp())] || {}
-        signal("park", typeof on === "boolean" ? on : !isParked(entry))
+        const entry = signals[bar.appKey(currentApp())] || {}
+        signal("park", typeof on === "boolean" ? on : !bar.isParked(entry))
       },
       channel: function () { return activeChannel },
       apps: apps
@@ -2436,13 +2313,6 @@
     } catch (_) {
       return app.url
     }
-  }
-
-  function pad(number, total) {
-    const width = String(total).length
-    let value = String(number)
-    while (value.length < width) value = "0" + value
-    return value
   }
 
   function readHidden() {

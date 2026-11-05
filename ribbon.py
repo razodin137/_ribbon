@@ -2267,7 +2267,12 @@ def inject_html(data: bytes, token: str = "") -> bytes:
     attrs = b' data-ribbon="1"'
     if token:
         attrs += b' data-ribbon-token="' + token.encode("utf-8") + b'"'
-    inject = b'<script src="/__ribbon/ribbon.js"' + attrs + b" defer></script>"
+    inject = (
+        b'<script src="/__ribbon/bar.js" defer></script>'
+        + b'<script src="/__ribbon/ribbon.js"'
+        + attrs
+        + b" defer></script>"
+    )
     matches = list(BODY_CLOSE_RE.finditer(data))
     if matches:
         index = matches[-1].start()
@@ -2821,6 +2826,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                 content_type = "application/json; charset=utf-8"
             elif name == "ribbon.js":
                 payload = (APP_DIR / "ribbon.js").read_bytes()
+                content_type = "text/javascript; charset=utf-8"
+            elif name == "bar.js":
+                payload = (APP_DIR / "bar.js").read_bytes()
                 content_type = "text/javascript; charset=utf-8"
             elif name == "card.js":
                 payload = (APP_DIR / "card.js").read_bytes()

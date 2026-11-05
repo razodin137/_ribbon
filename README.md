@@ -198,7 +198,8 @@ card. Press **C** or **Escape** to close it.
 <title>My Cool App</title>
 ```
 
-4. Refresh the page in your browser. Ribbon looks for new folders by itself.
+4. Come back to the tab or refresh the page. Ribbon refetches the list when
+   the page regains focus and when the app menu opens.
 
 Ribbon also opens other `.html` files, such as `app.html` or `landing.html`.
 If there are several, `index.html` wins. Then it tries names like `app.html`,

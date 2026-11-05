@@ -49,30 +49,51 @@
     // Draw the bar from the last list straight away, then refresh it when the
     // manifest arrives. Switching apps no longer waits on the manifest first.
     const cached = readCachedApps()
-    let update = cached ? mount(cached) : null
+    let update = null
+    let refreshing = null
 
-    fetch(manifestUrl, { cache: "no-store" })
-      .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status)
-        return response.json()
-      })
-      .then(function (data) {
-        const apps = Array.isArray(data) ? data : data && data.apps
-        if (!Array.isArray(apps) || !apps.length) return
-        const meta = Array.isArray(data)
-          ? null
-          : {
-            state: data.state,
-            token: data.token,
-            write: data.write
-          }
-        writeCachedApps(apps)
-        if (update) update(apps, meta)
-        else update = mount(apps, meta) || null
-      })
-      .catch(function () {
-        /* No manifest: stay quiet. */
-      })
+    function applyManifest(data) {
+      const apps = Array.isArray(data) ? data : data && data.apps
+      if (!Array.isArray(apps) || !apps.length) return
+      const meta = Array.isArray(data)
+        ? null
+        : {
+          state: data.state,
+          token: data.token,
+          write: data.write
+        }
+      writeCachedApps(apps)
+      if (update) update(apps, meta)
+      else update = mount(apps, meta, refresh) || null
+    }
+
+    // No watcher reaches every platform and mount, so ask again whenever the
+    // page comes back into view or its menu opens.
+    function refresh() {
+      if (refreshing) return refreshing
+      refreshing = fetch(manifestUrl, { cache: "no-store" })
+        .then(function (response) {
+          if (!response.ok) throw new Error("HTTP " + response.status)
+          return response.json()
+        })
+        .then(applyManifest)
+        .catch(function () {
+          /* No manifest: stay quiet. */
+        })
+        .then(function () {
+          refreshing = null
+        })
+      return refreshing
+    }
+
+    function refreshIfVisible() {
+      if (!document.hidden) refresh()
+    }
+
+    if (cached) update = mount(cached, null, refresh) || null
+    refresh()
+    document.addEventListener("visibilitychange", refreshIfVisible)
+    window.addEventListener("focus", refresh)
   }
 
   function readCachedApps() {
@@ -101,7 +122,7 @@
     return shadow
   }
 
-  function mount(rawApps, meta) {
+  function mount(rawApps, meta, refreshManifest) {
     meta = meta || {}
     let apps = rawApps.filter(function (app) {
       return app && typeof app.url === "string" && app.url
@@ -322,7 +343,10 @@
         deckChannel = activeChannel
         deckCursor = 0
       },
-      beforeMenu: renderChannels
+      beforeMenu: function () {
+        renderChannels()
+        if (refreshManifest) refreshManifest()
+      }
     })
 
     // Tell the browser about the pages Back and Next would open, so a click

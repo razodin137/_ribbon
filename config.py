@@ -37,8 +37,6 @@ PREFERRED_MARKDOWN = (
 README_NAMES = ("README.md", "readme.md", "README.markdown", "README.txt", "README", "README.rst")
 README_COMMIT_MESSAGE = "Add README"
 MAX_README_CHARS = 20000
-STATE_VERSION = 1
-STATE_DIR_NAME = "ribbon"
 HANDLER_TIMEOUT = 60
 # Below this size a gzip header costs more than the bytes it saves.
 GZIP_MIN_BYTES = 512

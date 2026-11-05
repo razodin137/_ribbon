@@ -31,7 +31,6 @@ import socket
 import threading
 import webbrowser
 import zlib
-from datetime import UTC, datetime
 from functools import lru_cache, partial
 from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -98,9 +97,7 @@ from config import (
     PREFERRED_MARKDOWN,
     README_COMMIT_MESSAGE,
     README_NAMES,
-    STATE_DIR_NAME,
     STATE_LABELS,
-    STATE_VERSION,
     STATIC_ASSETS,
     TYPE_COLORS,
     VERSION,
@@ -158,8 +155,18 @@ from scan import (
     folder_stats,
     folder_tree,
 )
-
-STATE_LOCK = threading.Lock()
+from state import (
+    STATE_DIR_NAME,
+    STATE_LOCK,
+    STATE_VERSION,
+    apply_signal,
+    empty_state,
+    load_state,
+    public_state,
+    save_state,
+    state_home,
+    state_path,
+)
 
 
 # Contents of these elements are text, not markup, so a <body> or </head>
@@ -1344,79 +1351,6 @@ def inject_html(data: bytes, token: str = "", version: str = "") -> bytes:
     if body_close is not None:
         return data[:body_close] + inject + data[body_close:]
     return data + inject
-
-
-def state_home() -> Path:
-    configured = os.environ.get("XDG_STATE_HOME")
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".local" / "state"
-
-
-def state_path(root: Path) -> Path:
-    digest = hashlib.sha1(str(root).encode("utf-8")).hexdigest()[:12]
-    return state_home() / STATE_DIR_NAME / f"state-{digest}.json"
-
-
-def empty_state(root: Path) -> dict:
-    return {"version": STATE_VERSION, "root": str(root), "assets": {}}
-
-
-def load_state(root: Path) -> dict:
-    try:
-        data = json.loads(state_path(root).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return empty_state(root)
-    if not isinstance(data, dict) or data.get("root") != str(root):
-        return empty_state(root)
-    if not isinstance(data.get("assets"), dict):
-        data["assets"] = {}
-    data["version"] = STATE_VERSION
-    return data
-
-
-def save_state(root: Path, state: dict) -> None:
-    path = state_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    try:
-        # 0600: the state names folders the user has opened. os.replace keeps
-        # the temp file's mode, so the final file is private too.
-        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
-        os.replace(temp, path)
-    finally:
-        try:
-            temp.unlink()
-        except OSError:
-            pass
-
-
-def public_state(state: dict) -> dict:
-    return {
-        "version": state.get("version", STATE_VERSION),
-        "assets": state.get("assets", {}),
-    }
-
-
-def apply_signal(state: dict, key: str, signal: str) -> dict:
-    assets = state.setdefault("assets", {})
-    entry = assets.get(key)
-    if not isinstance(entry, dict):
-        entry = {}
-    now = datetime.now(UTC)
-    if signal != "open":
-        raise ValueError("unknown signal")
-    try:
-        opens = int(entry.get("opens") or 0)
-    except (TypeError, ValueError):
-        opens = 0
-    entry["opens"] = opens + 1
-    entry["last_opened"] = now.isoformat(timespec="seconds")
-    entry["updated"] = now.isoformat(timespec="seconds")
-    assets[key] = entry
-    return state
 
 
 def hidden_path(raw_path: str) -> bool:

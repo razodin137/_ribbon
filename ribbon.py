@@ -242,24 +242,41 @@ def fallback_title(rel_dir: str) -> str:
     return name or "Untitled"
 
 
-def extract_title(path: Path) -> str:
+@lru_cache(maxsize=2048)
+def _page_meta(path: str, mtime_ns: int, size: int) -> tuple[str, str]:
+    """Title and description from one read of a page's head.
+
+    The key carries the file stamp, so an edit invalidates the entry. The
+    manifest asks for a title on every refresh; without this cache that is a
+    fresh read of up to 512 KB per app each time.
+    """
     try:
-        with path.open("rb") as fh:
+        with open(path, "rb") as fh:
             head = fh.read(512 * 1024)
     except OSError:
-        return ""
-    match = TITLE_RE.search(head)
-    return clean_title(match.group(1)) if match else ""
+        return "", ""
+    title = TITLE_RE.search(head)
+    description = META_DESCRIPTION_RE.search(head) or META_DESCRIPTION_FIRST_RE.search(head)
+    return (
+        clean_title(title.group(1)) if title else "",
+        clean_title(description.group(1)) if description else "",
+    )
+
+
+def page_meta(path: Path) -> tuple[str, str]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return "", ""
+    return _page_meta(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def extract_title(path: Path) -> str:
+    return page_meta(path)[0]
 
 
 def extract_description(path: Path) -> str:
-    try:
-        with path.open("rb") as fh:
-            head = fh.read(512 * 1024)
-    except OSError:
-        return ""
-    match = META_DESCRIPTION_RE.search(head) or META_DESCRIPTION_FIRST_RE.search(head)
-    return clean_title(match.group(1)) if match else ""
+    return page_meta(path)[1]
 
 
 def choose_html(filenames: list[str] | set[str]) -> str | None:
@@ -1105,6 +1122,8 @@ def project_info(path: Path, rel_dir: str) -> dict | None:
 
 
 GIT_CACHE: dict[str, tuple[float, dict]] = {}
+GIT_STATUS_LOCKS: dict[str, threading.Lock] = {}
+GIT_STATUS_LOCKS_GUARD = threading.Lock()
 GIT_CACHE_SECONDS = 2.0
 # The bar redraws on every page load. Re-scanning every repository each time
 # makes a fast click feel like a stall, so the manifest reuses Git lights for
@@ -1250,16 +1269,31 @@ def read_git_status(path: Path) -> dict:
     }
 
 
+def _git_status_lock(key: str) -> threading.Lock:
+    with GIT_STATUS_LOCKS_GUARD:
+        lock = GIT_STATUS_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            GIT_STATUS_LOCKS[key] = lock
+        return lock
+
+
 def git_status(path: Path, max_age: float = GIT_CACHE_SECONDS) -> dict:
     key = str(path.resolve())
-    now = time.monotonic()
     cached = GIT_CACHE.get(key)
-    if cached and now - cached[0] < max_age:
+    if cached and time.monotonic() - cached[0] < max_age:
         return cached[1]
 
-    status = read_git_status(path)
-    GIT_CACHE[key] = (now, status)
-    return status
+    # Prerendered neighbours ask for the manifest at the same moment. One
+    # lock per repo stops them running the same `git status` in parallel;
+    # whoever loses the race takes the fresh cache entry.
+    with _git_status_lock(key):
+        cached = GIT_CACHE.get(key)
+        if cached and time.monotonic() - cached[0] < max_age:
+            return cached[1]
+        status = read_git_status(path)
+        GIT_CACHE[key] = (time.monotonic(), status)
+        return status
 
 
 def list_folder_files(root: Path) -> list[dict]:
@@ -2189,8 +2223,10 @@ def discover(
 
     apps: list[dict] = []
     try:
+        root_resolved = root.resolve()
         children = sorted(root.iterdir(), key=lambda item: item.name.lower())
     except OSError:
+        root_resolved = root
         children = []
 
     for child in children:
@@ -2201,7 +2237,7 @@ def discover(
         if child == APP_DIR:
             continue
         try:
-            child.resolve().relative_to(root.resolve())
+            child.resolve().relative_to(root_resolved)
         except (OSError, ValueError):
             continue
 
@@ -2210,7 +2246,8 @@ def discover(
             app["git"] = git_status(child, max_age=git_max_age)
         apps.append(app)
 
-    apps.sort(key=lambda app: app["path"].lower())
+    # `children` is already in name order, and every app's path is its child
+    # folder's name, so appending in this loop keeps that order.
     _cache.update(at=now, root=cache_key, apps=apps)
     return apps
 
@@ -3170,7 +3207,7 @@ def asset_url(name: str, version: str) -> str:
 
 
 def inject_html(data: bytes, token: str = "", version: str = "") -> bytes:
-    if b"data-ribbon" in data or b"/__ribbon/ribbon.js" in data:
+    if b"data-ribbon-host" in data or b"/__ribbon/ribbon.js" in data:
         return data
     attrs = b' data-ribbon="1"'
     if token:

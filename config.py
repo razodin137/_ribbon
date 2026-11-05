@@ -59,30 +59,6 @@ STATE_LABELS = {
     "error": "git unavailable",
 }
 
-TREE_MAX_ENTRIES = 700
-
-SKIP_DIRS = {
-    "node_modules",
-    "venv",
-    "env",
-    ".venv",
-    "__pycache__",
-    ".cache",
-    ".next",
-    ".turbo",
-    ".parcel-cache",
-    "site-packages",
-    "vendor",
-    "bower_components",
-    "dist",
-    "build",
-    "out",
-    "target",
-    "coverage",
-}
-
-TREE_SKIP_DESCENT = {".git", *SKIP_DIRS}
-
 TYPE_COLORS = {
     "HTML": "hsl(28 64% 62%)",
     "Markdown": "hsl(250 34% 68%)",

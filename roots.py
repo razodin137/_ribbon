@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from config import SKIP_DIRS
+from scan import SKIP_DIRS
 
 
 def child_dirs(path: Path) -> list[Path]:

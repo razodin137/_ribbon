@@ -32,6 +32,7 @@ import threading
 import time
 import webbrowser
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from functools import lru_cache, partial
@@ -1125,6 +1126,9 @@ GIT_CACHE: dict[str, tuple[float, dict]] = {}
 GIT_STATUS_LOCKS: dict[str, threading.Lock] = {}
 GIT_STATUS_LOCKS_GUARD = threading.Lock()
 GIT_CACHE_SECONDS = 2.0
+# A cold manifest pays for one `git status` per folder. Running a handful at
+# once turns that serial wait into roughly the slowest repo instead of the sum.
+GIT_STATUS_WORKERS = 8
 # The bar redraws on every page load. Re-scanning every repository each time
 # makes a fast click feel like a stall, so the manifest reuses Git lights for
 # a few seconds. The Git panel still asks for fresh detail when it opens.
@@ -2222,6 +2226,7 @@ def discover(
         return _cache["apps"]  # type: ignore[return-value]
 
     apps: list[dict] = []
+    folders: list[Path] = []
     try:
         root_resolved = root.resolve()
         children = sorted(root.iterdir(), key=lambda item: item.name.lower())
@@ -2241,10 +2246,24 @@ def discover(
         except (OSError, ValueError):
             continue
 
-        app = directory_app(child, root, include_untitled)
-        if with_git:
-            app["git"] = git_status(child, max_age=git_max_age)
-        apps.append(app)
+        folders.append(child)
+        apps.append(directory_app(child, root, include_untitled))
+
+    if with_git and apps:
+        # `discover` runs on the manifest request thread, once the page has
+        # already asked for it, so a serial pass over every repo shows up as
+        # a stall. `git_status` is subprocess-bound, and the cache and
+        # per-repo locks it uses are already thread-safe.
+        workers = min(GIT_STATUS_WORKERS, len(apps))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            statuses = list(
+                pool.map(
+                    lambda folder: git_status(folder, max_age=git_max_age),
+                    folders,
+                )
+            )
+        for app, status in zip(apps, statuses):
+            app["git"] = status
 
     # `children` is already in name order, and every app's path is its child
     # folder's name, so appending in this loop keeps that order.

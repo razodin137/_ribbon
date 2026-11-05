@@ -80,8 +80,10 @@ finished page for you.
 
 Back and Next wrap around. Ribbon asks the browser to prepare the projects on
 either side of the one you are reading, so those two clicks open almost
-instantly. The bar also hides when you scroll down. It comes back when you
-scroll up. When it is hidden, a small **RIBBON** tab waits in the top right
+instantly. When you move between projects, the bar stays put and only the page
+content cross-fades. Browsers without cross-document view transitions simply
+replace the page. The bar also hides when you scroll down. It comes back when
+you scroll up. When it is hidden, a small **RIBBON** tab waits in the top right
 corner. Click it, or press **H**, to bring the bar back.
 
 Ribbon does not change your project pages. It adds the bar only while it

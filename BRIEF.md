@@ -3,10 +3,11 @@
 **Status:** draft, for arguing with
 **Date:** 4 November 2026
 
-**Built so far:** directory-only discovery (one row per folder), the folder
-contents card, the deck (`Drift`), derived channels, Keep/Park, and the
-sidecar state file. The stage/card overlay, thumbnails, and the Shelf are
-still ahead.
+**Built so far:** directory-only discovery (one row per folder), the contents
+card (file grid, hidden entries, ignore status, and a `.gitignore` preview),
+a Contents flipper on every HTML page, the deck (`Drift`), derived channels,
+Keep/Park, and the sidecar state file. The stage/card overlay, thumbnails,
+and the Shelf are still ahead.
 
 ---
 

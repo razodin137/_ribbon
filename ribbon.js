@@ -940,10 +940,63 @@
     }
     .btn:hover { background: rgba(255, 255, 255, .075); color: #fff; }
     .btn:active { background: rgba(255, 255, 255, .11); }
+    .btn.is-active {
+      background: rgba(208, 166, 74, .17);
+      color: #f4ecd7;
+    }
     .btn:focus-visible { outline: 2px solid #d0a64a; outline-offset: 0; }
     .btn:disabled { opacity: .28; cursor: default; pointer-events: none; }
     .btn svg { width: 15px; height: 15px; flex: none; }
     .sep { width: 1px; height: 17px; background: rgba(255, 255, 255, .13); margin: 0 4px; }
+
+    .card-overlay {
+      position: fixed;
+      inset: 40px 0 0;
+      z-index: 90;
+      overflow: hidden;
+      background: #171814;
+      pointer-events: auto;
+    }
+    .card-overlay[hidden] { display: none; }
+
+    .card-frame {
+      display: block;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+      background: #171814;
+      transform-origin: left center;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+
+    .card-close {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      z-index: 2;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      margin: 0;
+      padding: 0 11px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 999px;
+      background: rgba(18, 19, 16, .72);
+      color: #ded8c8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      pointer-events: auto;
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+    }
+    .card-close:hover { background: rgba(30, 31, 26, .92); color: #fff; }
+    .card-close:focus-visible { outline: 2px solid #d0a64a; outline-offset: 2px; }
 
     .peek {
       position: fixed;
@@ -989,6 +1042,7 @@
       }
       .git-overlay { padding: 8px; }
       .git-dialog { max-height: calc(100vh - 16px); }
+      .card-close { top: 8px; right: 8px; }
     }
     @media (max-width: 420px) {
       .leds { gap: 0; padding: 0 2px; margin-left: -5px; }
@@ -1137,6 +1191,10 @@
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>' +
             '<span class="label">Next</span>' +
           "</button>" +
+          '<button class="btn" type="button" data-act="contents" aria-label="Show contents" aria-pressed="false" title="Show contents — C">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' +
+            '<span class="label">Contents</span>' +
+          "</button>" +
           '<button class="btn" type="button" data-act="drift" aria-label="Drift to another app" title="Drift to another app — R">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 4l3 3-3 3"/><path d="M18 20l3-3-3-3"/><path d="M3 7h3c2 0 3.5 1 4.5 2.5l3 5C14.5 16 16 17 18 17h3"/><path d="M3 17h3c2 0 3.5-1 4.5-2.5l3-5C14.5 8 16 7 18 7h3"/></svg>' +
             '<span class="label">Drift</span>' +
@@ -1179,6 +1237,10 @@
             '<div class="menu-empty" hidden>No apps match.</div>' +
           "</div>" +
         "</div>" +
+      "</div>" +
+      '<div class="card-overlay" hidden>' +
+        '<button class="card-close" type="button" aria-label="Close contents" title="Close contents — Esc">✕ Close</button>' +
+        '<iframe class="card-frame" title="Project contents"></iframe>' +
       "</div>" +
       '<button class="peek" type="button" aria-label="Show ribbon" title="Show ribbon — H">' +
         '<span aria-hidden="true">▤</span><span class="peek-label">ribbon</span>' +
@@ -1284,6 +1346,10 @@
     const tipChangesText = ledTip.querySelector('[data-tip-text="changes"]')
     const tipRemoteText = ledTip.querySelector('[data-tip-text="remote"]')
     const buttons = shadow.querySelectorAll("button[data-act]")
+    const contentsButton = shadow.querySelector('[data-act="contents"]')
+    const cardOverlay = shadow.querySelector(".card-overlay")
+    const cardFrame = shadow.querySelector(".card-frame")
+    const cardClose = shadow.querySelector(".card-close")
 
     const gitToken = scriptEl ? scriptEl.getAttribute("data-ribbon-token") || "" : ""
     const gitOverlay = shadow.querySelector(".git-overlay")
@@ -1400,6 +1466,8 @@
     let gitBusy = false
     let gitBlocked = false
     let gitReturnFocus = null
+    let cardOpen = false
+    let cardSwitch = 0
 
     function applyApps() {
       const current = locate()
@@ -1420,6 +1488,8 @@
         const act = buttons[k].getAttribute("data-act")
         if (act !== "hide") buttons[k].disabled = apps.length < 2
       }
+      contentsButton.disabled = !apps[index] || apps[index].kind !== "page"
+      if (contentsButton.disabled) setCardOpen(false)
       if (menuOpen) {
         renderChannels()
         renderMenu(searchInput.value)
@@ -1722,6 +1792,106 @@
 
     function currentApp() {
       return index >= 0 ? apps[index] : null
+    }
+
+    function cardAddress(app) {
+      const parts = String(app && app.path ? app.path : "")
+        .split("/")
+        .filter(function (part) { return !!part })
+        .map(function (part) { return encodeURIComponent(part) })
+      const address = new URL(
+        "card/" + (parts.length ? parts.join("/") + "/" : ""),
+        scriptBase
+      )
+      address.searchParams.set("embed", "1")
+      return address.href
+    }
+
+    function motionReduced() {
+      return !!(window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+    }
+
+    function cancelCardAnimations() {
+      if (!cardFrame.getAnimations) return
+      cardFrame.getAnimations().forEach(function (animation) {
+        animation.cancel()
+      })
+    }
+
+    function animateCardIn() {
+      if (!cardFrame.animate || motionReduced()) return
+      const entering = cardFrame.animate(
+        [
+          { transform: "perspective(1600px) rotateY(90deg)", opacity: 0 },
+          { transform: "perspective(1600px) rotateY(0deg)", opacity: 1 }
+        ],
+        { duration: 260, easing: "cubic-bezier(.2, .7, .3, 1)" }
+      )
+      window.setTimeout(function () {
+        if (entering.playState !== "finished") entering.cancel()
+      }, 420)
+    }
+
+    function animateCardOut(done) {
+      if (!cardFrame.animate || motionReduced()) {
+        done()
+        return
+      }
+      let finished = false
+      const finish = function () {
+        if (finished) return
+        finished = true
+        done()
+      }
+      const out = cardFrame.animate(
+        [
+          { transform: "perspective(1600px) rotateY(0deg)", opacity: 1 },
+          { transform: "perspective(1600px) rotateY(-90deg)", opacity: 0 }
+        ],
+        {
+          duration: 200,
+          easing: "cubic-bezier(.45, 0, .55, 1)",
+          fill: "forwards"
+        }
+      )
+      window.setTimeout(finish, 320)
+      out.finished.then(finish).catch(finish)
+    }
+
+    function setCardOpen(open) {
+      const app = currentApp()
+      if (open) {
+        if (!app || app.kind !== "page" || cardOpen) return
+        cardOpen = true
+        cardSwitch += 1
+        cancelCardAnimations()
+        cardFrame.title = (app.title ? app.title + " " : "") + "contents"
+        cardFrame.src = cardAddress(app)
+        cardOverlay.hidden = false
+        contentsButton.classList.add("is-active")
+        contentsButton.setAttribute("aria-pressed", "true")
+        contentsButton.setAttribute("aria-label", "Hide contents")
+        contentsButton.title = "Hide contents — C"
+        animateCardIn()
+        try { cardFrame.focus() } catch (_) { /* ignore */ }
+        return
+      }
+      if (!cardOpen) return
+      cardOpen = false
+      contentsButton.classList.remove("is-active")
+      contentsButton.setAttribute("aria-pressed", "false")
+      contentsButton.setAttribute("aria-label", "Show contents")
+      contentsButton.title = "Show contents — C"
+      const serial = cardSwitch + 1
+      cardSwitch = serial
+      animateCardOut(function () {
+        if (serial !== cardSwitch) return
+        cancelCardAnimations()
+        cardOverlay.hidden = true
+        cardFrame.removeAttribute("src")
+        try { contentsButton.focus() } catch (_) { /* ignore */ }
+      })
     }
 
     function updateCurrentStar() {
@@ -2870,9 +3040,25 @@
       const action = button.getAttribute("data-act")
       if (action === "prev") go(-1)
       else if (action === "next") go(1)
+      else if (action === "contents") setCardOpen(!cardOpen)
       else if (action === "drift") drift()
       else if (action === "reload") reloadApp()
       else if (action === "hide") setManual(true)
+    })
+    cardClose.addEventListener("click", function () {
+      setCardOpen(false)
+    })
+    cardFrame.addEventListener("load", function () {
+      if (!cardOpen) return
+      try {
+        const view = cardFrame.contentWindow
+        if (!view) return
+        view.addEventListener("keydown", function (event) {
+          if (event.key !== "Escape") return
+          event.preventDefault()
+          setCardOpen(false)
+        })
+      } catch (_) { /* cross-origin, leave the close button */ }
     })
     peekEl.addEventListener("click", function () {
       setManual(false)
@@ -3100,6 +3286,14 @@
         }
         return
       }
+      if (cardOpen) {
+        if (key === "Escape" || key === "c" || key === "C") {
+          setCardOpen(false)
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
       if (key === "Escape" && menuOpen) {
         closeMenu(true)
         event.preventDefault()
@@ -3123,6 +3317,7 @@
       let handled = true
       if (key === "[") go(-1)
       else if (key === "]") go(1)
+      else if (key === "c" || key === "C") setCardOpen(true)
       else if (key === "r" || key === "R") {
         if (event.shiftKey) reloadApp()
         else drift()
@@ -3161,6 +3356,9 @@
       next: function () { go(1) },
       drift: drift,
       random: drift,
+      contents: function (on) {
+        setCardOpen(arguments.length ? !!on : !cardOpen)
+      },
       keep: function (on) {
         const entry = signals[appKey(currentApp())] || {}
         signal("keep", typeof on === "boolean" ? on : !entry.keep)

@@ -127,27 +127,151 @@
     return type === "Project" ? "Local project" : type + " project"
   }
 
-  function cardHtml(app) {
-    const icon = app.icon || "PR"
-    const color = app.color || "#d0a64a"
-    const description = app.description ||
-      "A folder in your ribbon, shown here because it has no web page."
+  function headHtml(app) {
+    return '<header class="rc-head">' +
+      '<span class="rc-stamp" aria-hidden="true">' + esc(app.icon || "PR") + "</span>" +
+      '<div class="rc-titles">' +
+        '<p class="rc-type">' + esc(typeLabel(app)) + "</p>" +
+        '<h1 class="rc-title">' + esc(app.title || "Untitled") + "</h1>" +
+      "</div>" +
+    "</header>"
+  }
+
+  function hiddenRow(entry) {
+    const classes = [ "rc-tree-row" ]
+    if (entry.dir) classes.push("is-dir")
+    if (entry.ignored) classes.push("is-ignored")
+    if (entry.link) classes.push("is-link")
+
+    const tags = [ ]
+    if (entry.ignored) tags.push('<span class="rc-tag is-ignored">ignored</span>')
+    if (entry.secret && !entry.ignored) {
+      tags.push('<span class="rc-tag is-alert">not ignored</span>')
+    }
+    if (entry.name === ".git") tags.push('<span class="rc-tag is-special">git</span>')
+
+    const size = entry.dir || entry.link
+      ? ""
+      : '<span class="rc-tree-size">' + esc(formatSize(entry.size)) + "</span>"
+
+    return '<li class="' + classes.join(" ") + '" style="--depth: 0">' +
+      '<span class="rc-tree-name">' + esc(entry.path) +
+        (entry.dir ? "/" : "") + (entry.link ? " →" : "") + "</span>" +
+      '<span class="rc-tree-tags">' + tags.join("") + "</span>" +
+      size +
+    "</li>"
+  }
+
+  function hiddenSummary(tree) {
+    if (!tree || !tree.entries) return '<span class="rc-stats">not available</span>'
+    const hidden = tree.entries.filter(function (entry) {
+      return entry.hidden
+    })
+    const ignored = hidden.filter(function (entry) {
+      return entry.ignored
+    }).length
+    const bits = [
+      hidden.length + (hidden.length === 1 ? " entry" : " entries"),
+      ignored + " ignored"
+    ]
+    return '<span class="rc-stats">' + bits.map(function (bit) {
+      return "<span>" + esc(bit) + "</span>"
+    }).join('<span class="rc-dot">·</span>') + "</span>"
+  }
+
+  function hiddenSection(tree) {
+    let body
+    if (!tree || !tree.entries) {
+      body = '<p class="rc-note">This snapshot cannot see hidden files or ' +
+        "ignore rules. Start <code>ribbon.py</code> for the full overview.</p>"
+    } else {
+      const hidden = tree.entries.filter(function (entry) {
+        return entry.hidden
+      }).sort(function (a, b) {
+        if (a.name === ".git") return 1
+        if (b.name === ".git") return -1
+        return 0
+      })
+      body = hidden.length
+        ? '<ul class="rc-tree">' + hidden.map(hiddenRow).join("") + "</ul>"
+        : '<p class="rc-empty">No hidden files.</p>'
+    }
+
+    return '<section class="rc-hidden">' +
+      '<div class="rc-contents-head">' +
+        '<span class="rc-contents-title">Hidden</span>' +
+        hiddenSummary(tree) +
+      "</div>" +
+      body +
+    "</section>"
+  }
+
+  function sensitiveHtml(tree) {
+    if (!tree || !tree.sensitive || !tree.sensitive.length) return ""
+    const names = tree.sensitive.map(function (name) {
+      return esc(name)
+    }).join(", ")
+    return '<p class="rc-warn">Not ignored: ' + names +
+      ". Add it to <code>.gitignore</code> before you commit.</p>"
+  }
+
+  function ignoreHtml(tree) {
+    if (!tree) return ""
+    if (!tree.gitignore_present) {
+      return '<section class="rc-ignore">' +
+        '<div class="rc-contents-head">' +
+          '<span class="rc-contents-title">.gitignore</span>' +
+        "</div>" +
+        '<p class="rc-empty">No .gitignore in this folder. Generated files ' +
+        "may be staged by mistake.</p>" +
+      "</section>"
+    }
+    if (!tree.gitignore.trim()) {
+      return '<section class="rc-ignore">' +
+        '<div class="rc-contents-head">' +
+          '<span class="rc-contents-title">' +
+            esc(tree.gitignore_label || ".gitignore") + "</span>" +
+          '<span class="rc-stats"><span>empty</span></span>' +
+        "</div>" +
+        '<p class="rc-empty">This .gitignore has no rules yet.</p>' +
+      "</section>"
+    }
+    const rules = tree.gitignore.split("\n").filter(function (line) {
+      const trimmed = line.trim()
+      return trimmed && trimmed.charAt(0) !== "#"
+    }).length
+    return '<section class="rc-ignore">' +
+      '<div class="rc-contents-head">' +
+        '<span class="rc-contents-title">' +
+          esc(tree.gitignore_label || ".gitignore") + "</span>" +
+        '<span class="rc-stats"><span>' + rules +
+          (rules === 1 ? " rule" : " rules") + "</span></span>" +
+      "</div>" +
+      '<pre class="rc-ignore-pre">' + esc(tree.gitignore) + "</pre>" +
+    "</section>"
+  }
+
+  function overviewHtml(app) {
+    const description = app.description || (
+      app.kind === "page"
+        ? "No description yet. Add a meta description or README to this folder."
+        : "A folder in your ribbon, shown here because it has no web page."
+    )
     const stats = app.stats
+    const tree = app.tree || null
     const run = app.run
       ? '<div class="rc-fact">' +
           "<dt>Run</dt>" +
           '<dd><code class="rc-run">' + esc(app.run) + "</code></dd>" +
         "</div>"
       : ""
+    const footer = app.kind === "page"
+      ? "The folder behind this page."
+      : "No web page in this folder, so Ribbon shows its contents."
 
-    return '<article class="rc-card" style="--rc-accent: ' + esc(color) + '">' +
-      '<header class="rc-head">' +
-        '<span class="rc-stamp" aria-hidden="true">' + esc(icon) + "</span>" +
-        '<div class="rc-titles">' +
-          '<p class="rc-type">' + esc(typeLabel(app)) + "</p>" +
-          '<h1 class="rc-title">' + esc(app.title || "Untitled") + "</h1>" +
-        "</div>" +
-      "</header>" +
+    return '<article class="rc-card" style="--rc-accent: ' +
+      esc(app.color || "#d0a64a") + '">' +
+      headHtml(app) +
       '<p class="rc-desc">' + esc(description) + "</p>" +
       '<dl class="rc-facts">' +
         '<div class="rc-fact">' +
@@ -166,19 +290,20 @@
         typeBar(stats) +
         tileGrid(stats, app.files) +
       "</section>" +
-      '<footer class="rc-foot">' +
-        "No web page in this folder, so Ribbon shows its contents." +
-      "</footer>" +
+      hiddenSection(tree) +
+      sensitiveHtml(tree) +
+      ignoreHtml(tree) +
+      '<footer class="rc-foot">' + esc(footer) + "</footer>" +
     "</article>"
   }
 
   function mount() {
     const node = document.getElementById("ribbon-card")
     if (!node || !window.__RIBBON_CARD_APP__) return
-    node.innerHTML = cardHtml(window.__RIBBON_CARD_APP__)
+    node.innerHTML = overviewHtml(window.__RIBBON_CARD_APP__)
   }
 
-  window.__RIBBON_CARD_HTML__ = cardHtml
+  window.__RIBBON_CARD_HTML__ = overviewHtml
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", mount)

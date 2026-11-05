@@ -1,5 +1,8 @@
 # Ribbon
 
+**Ribbon wraps around your vibe-coded projects, helps you surface them, and
+shows you how far along they are.**
+
 Ribbon is a little bar at the top of your screen. It lets you jump between
 all the project folders you made, without typing long addresses. Each folder
 gets one line: a page opens the page, and everything else opens a card with
@@ -7,7 +10,7 @@ its contents.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ ●●● 04 / 11  Beam Library ▾    ‹ Back  › Next  ⤨ Drift  ↻    ✕     │
+│ ●●● 04 / 11  Beam Library ▾  ‹ Back › Next ▦ Contents ⤨ Drift ↻ ✕  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -46,6 +49,7 @@ a Markdown file opens the document instead.
 | `Beam Library ▾` | Open the app menu: search and jump to any app | `/` |
 | `‹ Back` | Go to the app before this one | `[` |
 | `› Next` | Go to the app after this one | `]` |
+| `▦ Contents` | Flip an HTML page to its contents card | `C` |
 | `⤨ Drift` | Deal the next project from a no-repeat deck | `R` |
 | `↻` | Reload the app you are looking at | `Shift+R` |
 | `✕` | Hide the bar | `H` |
@@ -211,6 +215,29 @@ orange for HTML, green for Python, grey for shell scripts, and so on — so
 the same kind of project always looks the same. Hover over the badge to see
 the full type.
 
+## The contents card
+
+Every contents card shows the whole folder on one page: the file grid, the
+hidden files and folders, and the folder's `.gitignore` (or the repository's,
+when the folder has none of its own). There is nothing to flip open.
+
+- **ignored** marks a file or folder that `.gitignore` would leave out of a
+  commit.
+- **hidden** entries are listed even when they are ignored, so you can see
+  what is really in the folder.
+- **not ignored** flags a likely secret such as `.env` that a commit would
+  include.
+
+Check this card before you press **Commit**. It answers the question the git
+panel cannot: will the next commit contain something it should not?
+
+When a folder opens a real HTML page, the bar has a **Contents** button. It
+flips the page over to the same contents card. Press **C** or click
+**Contents** again to return, and press **Esc** while the card is open to
+close it. The no-server snapshot still opens contents cards for folders without
+a page, but it cannot see hidden files or ignore rules, and its HTML pages have
+no Contents button; start `ribbon.py` for the full card.
+
 ## Check what it found
 
 Want to see the list without opening a browser? Run:
@@ -356,7 +383,7 @@ _ribbon/
   boot.js       the tiny check that restores a hidden bar on load
   shell.js      the bar and window used by the no-server page
   apps.js       the list that page uses (made by --write-apps)
-  card.js       the project card shown for scripts and tools
+  card.js       the contents card: file grid, hidden files, and .gitignore
   card.css      the look of that card
   markdown.css  the look of a rendered Markdown document
   ribbon.py     finds the apps, serves them, and saves state

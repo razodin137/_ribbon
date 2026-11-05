@@ -435,10 +435,13 @@
   }
 
   function cardPage(app) {
+    const data = JSON.stringify(app).replace(/</g, "\\u003c")
     return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<link rel="stylesheet" href="card.css"></head><body>' +
-      window.__RIBBON_CARD_HTML__(app) + "</body></html>"
+      '<link rel="stylesheet" href="card.css">' +
+      "<script>window.__RIBBON_CARD_APP__ = " + data + ";</script>" +
+      '<script src="card.js" defer></script></head><body>' +
+      '<div id="ribbon-card"></div></body></html>'
   }
 
   function markdownPage(app) {

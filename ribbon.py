@@ -32,6 +32,7 @@ import threading
 import time
 import webbrowser
 from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatchcase
 from functools import partial
 from html import escape, unescape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -40,7 +41,7 @@ from typing import ClassVar
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 APP_DIR = Path(__file__).resolve().parent
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 HTML_SUFFIXES = (".html", ".htm")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdown", ".mkd")
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif", ".bmp")
@@ -116,6 +117,8 @@ SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
 LARGE_FILE_BYTES = 5 * 1024 * 1024
 MAX_ACTION_OUTPUT = 4000
 MAX_DETAIL_FILES = 200
+TREE_MAX_ENTRIES = 700
+GITIGNORE_PREVIEW_CHARS = 4000
 
 SKIP_DIRS = {
     "node_modules",
@@ -136,6 +139,8 @@ SKIP_DIRS = {
     "target",
     "coverage",
 }
+
+TREE_SKIP_DESCENT = {".git", *SKIP_DIRS}
 
 
 def child_dirs(path: Path) -> list[Path]:
@@ -187,6 +192,16 @@ def default_root() -> Path:
 
 
 TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+META_DESCRIPTION_RE = re.compile(
+    rb'<meta\s+[^>]*name\s*=\s*["\']description["\'][^>]*'
+    rb'content\s*=\s*["\']([^"\']*)["\']',
+    re.IGNORECASE | re.DOTALL,
+)
+META_DESCRIPTION_FIRST_RE = re.compile(
+    rb'<meta\s+[^>]*content\s*=\s*["\']([^"\']*)["\'][^>]*'
+    rb'name\s*=\s*["\']description["\']',
+    re.IGNORECASE | re.DOTALL,
+)
 BODY_CLOSE_RE = re.compile(rb"</body\s*>", re.IGNORECASE)
 SHELL_MARKER = b"data-ribbon-shell"
 
@@ -214,6 +229,16 @@ def extract_title(path: Path) -> str:
     except OSError:
         return ""
     match = TITLE_RE.search(head)
+    return clean_title(match.group(1)) if match else ""
+
+
+def extract_description(path: Path) -> str:
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(512 * 1024)
+    except OSError:
+        return ""
+    match = META_DESCRIPTION_RE.search(head) or META_DESCRIPTION_FIRST_RE.search(head)
     return clean_title(match.group(1)) if match else ""
 
 
@@ -727,6 +752,181 @@ def folder_entries(path: Path) -> list[str]:
         if len(entries) >= 14:
             break
     return entries
+
+
+def _likely_secret(name: str) -> bool:
+    lowered = name.lower()
+    return (
+        lowered in SECRET_NAMES
+        or (
+            lowered.startswith(".env.")
+            and lowered not in {".env.example", ".env.sample", ".env.template"}
+        )
+        or lowered.endswith(SECRET_SUFFIXES)
+    )
+
+
+def _gitignore_patterns(root: Path) -> list[tuple[bool, str]]:
+    try:
+        text = (root / ".gitignore").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    patterns: list[tuple[bool, str]] = []
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        negated = line.startswith("!")
+        if negated:
+            line = line[1:]
+        line = line.strip()
+        if line:
+            patterns.append((negated, line))
+    return patterns
+
+
+def _plain_ignored(rel: str, is_dir: bool, patterns: list[tuple[bool, str]]) -> bool:
+    ignored = False
+    parts = rel.split("/")
+    for negated, pattern in patterns:
+        anchored = pattern.startswith("/")
+        dir_only = pattern.endswith("/")
+        core = pattern.rstrip("/").lstrip("/")
+        if not core:
+            continue
+        candidates = [ "/".join(parts) ] if anchored or "/" in core else parts
+        matched = any(fnmatchcase(candidate, core) for candidate in candidates)
+        if not matched and "/" in core:
+            for index in range(1, len(parts)):
+                if fnmatchcase("/".join(parts[:index]), core):
+                    matched = True
+                    break
+        if matched and dir_only and not is_dir:
+            matched = any(fnmatchcase(candidate, core) for candidate in parts[:-1])
+        if matched:
+            ignored = not negated
+    return ignored
+
+
+def _git_check_ignored(root: Path, paths: list[str]) -> set[str]:
+    if not paths:
+        return set()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "--stdin", "--no-index", "-z"],
+            input="\0".join(paths).encode("utf-8"),
+            capture_output=True,
+            timeout=6,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if proc.returncode not in (0, 1):
+        return set()
+    return {item for item in proc.stdout.decode("utf-8", "replace").split("\0") if item}
+
+
+def _gitignore_source(path: Path, root: Path, repo: bool) -> tuple[Path | None, str]:
+    if (path / ".gitignore").is_file():
+        return path / ".gitignore", ".gitignore"
+    if repo and root != path and (root / ".gitignore").is_file():
+        return root / ".gitignore", "repo root .gitignore"
+    return None, ""
+
+
+def folder_tree(path: Path) -> dict:
+    """Every entry in the folder, hidden ones included, with ignore status."""
+    repo_root = _git_text(path, ["rev-parse", "--show-toplevel"])
+    repo = bool(repo_root)
+    root = Path(repo_root) if repo else path
+    try:
+        prefix = path.resolve().relative_to(root.resolve()).as_posix()
+    except (OSError, ValueError):
+        prefix = ""
+    if prefix == ".":
+        prefix = ""
+
+    entries: list[dict] = []
+    truncated = False
+
+    def walk(current: Path, depth: int) -> None:
+        nonlocal truncated
+        if len(entries) >= TREE_MAX_ENTRIES:
+            truncated = True
+            return
+        try:
+            children = sorted(
+                current.iterdir(),
+                key=lambda item: (not item.is_dir(), item.name.lower()),
+            )
+        except OSError:
+            return
+        for child in children:
+            if len(entries) >= TREE_MAX_ENTRIES:
+                truncated = True
+                return
+            link = child.is_symlink()
+            try:
+                is_dir = child.is_dir() and not link
+                size = 0 if is_dir else child.stat().st_size
+            except OSError:
+                continue
+            name = child.name
+            entries.append({
+                "name": name,
+                "path": child.relative_to(path).as_posix(),
+                "dir": is_dir,
+                "depth": depth,
+                "hidden": name.startswith("."),
+                "link": link,
+                "size": size,
+                "secret": _likely_secret(name),
+            })
+            if is_dir and name not in TREE_SKIP_DESCENT:
+                walk(child, depth + 1)
+
+    walk(path, 0)
+
+    if repo:
+        inputs = [
+            f"{prefix}/{entry['path']}" if prefix else entry["path"]
+            for entry in entries
+        ]
+        ignored = _git_check_ignored(root, inputs)
+        for entry, rel in zip(entries, inputs):
+            entry["ignored"] = rel in ignored
+    else:
+        patterns = _gitignore_patterns(path)
+        for entry in entries:
+            entry["ignored"] = _plain_ignored(entry["path"], entry["dir"], patterns)
+
+    source, label = _gitignore_source(path, root, repo)
+    try:
+        gitignore = source.read_text(encoding="utf-8", errors="replace")[
+            :GITIGNORE_PREVIEW_CHARS
+        ] if source else ""
+    except OSError:
+        gitignore = ""
+        source = None
+
+    sensitive = [
+        entry["path"]
+        for entry in entries
+        if entry["secret"] and not entry["ignored"]
+    ][:5]
+
+    return {
+        "entries": entries,
+        "count": len(entries),
+        "truncated": truncated,
+        "repo": repo,
+        "hidden_count": sum(1 for entry in entries if entry["hidden"]),
+        "ignored_count": sum(1 for entry in entries if entry["ignored"]),
+        "sensitive": sensitive,
+        "gitignore": gitignore,
+        "gitignore_present": source is not None,
+        "gitignore_label": label,
+    }
 
 
 def folder_stats(path: Path) -> dict:
@@ -1860,6 +2060,35 @@ def run_git_action(action: str, target: Path, body: dict) -> dict:
     return _action_error("Unknown Git action.")
 
 
+def page_card_info(
+    path: Path, rel_dir: str, include_untitled: bool = False
+) -> dict | None:
+    """The overview card for a folder whose page Ribbon serves."""
+    try:
+        filenames = [entry.name for entry in path.iterdir() if entry.is_file()]
+    except OSError:
+        return None
+    html = choose_html(filenames)
+    if not html or is_shell_page(path / html):
+        return None
+    page = path / html
+    title = extract_title(page)
+    if not title and not include_untitled:
+        return None
+    _, summary = readme_summary(path)
+    return {
+        "kind": "page",
+        "title": title or fallback_title(rel_dir),
+        "description": summary or extract_description(page),
+        "type": "HTML",
+        "icon": "HTML",
+        "run": "",
+        "files": folder_entries(path),
+        "stats": folder_stats(path),
+        "color": type_color("HTML"),
+    }
+
+
 def directory_app(path: Path, root: Path, include_untitled: bool) -> dict:
     """One directory, represented as its page or as a folder card."""
     rel_dir = path.relative_to(root).as_posix()
@@ -2511,7 +2740,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             return
 
         rel_dir = target.relative_to(self.root.resolve()).as_posix()
-        info = project_info(target, rel_dir)
+        info = page_card_info(target, rel_dir, self.include_untitled)
+        if not info:
+            info = project_info(target, rel_dir)
         if not info:
             info = folder_info(target, rel_dir)
         if info["kind"] == "markdown":
@@ -2522,6 +2753,7 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             info["mtime"] = int(target.stat().st_mtime)
         except OSError:
             info["mtime"] = 0
+        info["tree"] = folder_tree(target)
 
         data = json.dumps(info, ensure_ascii=False).replace("</", "<\\/")
         doc = (
@@ -2540,7 +2772,10 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             "</body>\n"
             "</html>\n"
         ).encode("utf-8")
-        payload = inject_html(doc, self.token)
+        embed = info["kind"] == "page" or (
+            parse_qs(urlsplit(self.path).query).get("embed") == [ "1" ]
+        )
+        payload = doc if embed else inject_html(doc, self.token)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

@@ -454,7 +454,6 @@
       }
     }
 
-    const favorites = readFavorites()
     const signals = meta.state && meta.state.assets ? meta.state.assets : {}
     let ribbonToken = meta.token || gitToken
     let canDelete = !!(meta.write && ribbonToken)
@@ -474,7 +473,6 @@
       deckCursor = Number(storedDeck.cursor) || 0
       if (deckCursor >= deck.length) deckCursor = 0
     }
-    let menuOpen = false
     let gitDetail = null
     let gitAction = null
     let gitBusy = false
@@ -482,6 +480,55 @@
     let gitReturnFocus = null
     let cardOpen = false
     let cardSwitch = 0
+
+    const ui = bar.createBar({
+      root: shadow,
+      refs: {
+        menuEl: menuEl,
+        menuCurrentTitle: menuCurrentTitle,
+        menuCurrentMeta: menuCurrentMeta,
+        menuChannels: menuChannels,
+        keepButton: keepButton,
+        parkButton: parkButton,
+        starButtons: starButtons,
+        searchInput: searchInput,
+        menuFavSection: menuFavSection,
+        menuAllSection: menuAllSection,
+        menuFavList: menuFavList,
+        menuAllList: menuAllList,
+        menuAllHeading: menuAllHeading,
+        menuEmpty: menuEmpty,
+        titleButton: titleButton,
+        ledButtons: ledButtons,
+        ledsWrap: ledsWrap,
+        ledTip: ledTip,
+        ledRepo: ledRepo,
+        ledChanges: ledChanges,
+        ledRemote: ledRemote,
+        tipRepoDot: tipRepoDot,
+        tipChangesDot: tipChangesDot,
+        tipRemoteDot: tipRemoteDot,
+        tipRepoText: tipRepoText,
+        tipChangesText: tipChangesText,
+        tipRemoteText: tipRemoteText
+      },
+      apps: apps,
+      index: index,
+      signals: signals,
+      canDelete: canDelete,
+      channel: { id: activeChannel, matches: channelMatches, label: channelLabel },
+      onSelect: function (app) { location.assign(app.url) },
+      onDelete: openDeletePanel,
+      onSignal: signal,
+      onChannel: function (id) {
+        activeChannel = id || "all"
+        saveChannel()
+        deck = []
+        deckChannel = activeChannel
+        deckCursor = 0
+      },
+      beforeMenu: renderChannels
+    })
 
     function applyApps() {
       const current = locate()
@@ -495,18 +542,22 @@
       menuCurrentTitle.textContent = current.title
       countEl.textContent = (index >= 0 ? bar.pad(index + 1, apps.length) : "—") +
         " / " + bar.pad(apps.length, apps.length)
+      ui.setApps(apps)
+      ui.setIndex(index)
+      ui.setCanDelete(canDelete)
+      ui.setChannel(activeChannel)
       setGit(apps[index] && apps[index].git)
-      updateCurrentStar()
-      updateCurrentMeta()
+      ui.updateCurrentStar()
+      ui.updateCurrentMeta()
       for (let k = 0; k < buttons.length; k += 1) {
         const act = buttons[k].getAttribute("data-act")
         if (act !== "hide") buttons[k].disabled = apps.length < 2
       }
       contentsButton.disabled = !apps[index] || apps[index].kind !== "page"
       if (contentsButton.disabled) setCardOpen(false)
-      if (menuOpen) {
+      if (ui.isMenuOpen()) {
         renderChannels()
-        renderMenu(searchInput.value)
+        ui.renderMenu(searchInput.value)
       }
       if (window.__ribbon) window.__ribbon.apps = apps
     }
@@ -569,7 +620,7 @@
       const gone = manualHidden || autoHidden
       if (gone) {
         closeTip()
-        closeMenu(false)
+        ui.closeMenu(false)
       }
       barEl.classList.toggle("is-gone", gone)
       if (gone) barEl.setAttribute("inert", "")
@@ -604,7 +655,7 @@
     function drift() {
       if (apps.length < 2) return
       if (!ensureDeck()) return
-      const current = bar.appKey(currentApp())
+      const current = bar.appKey(ui.currentApp())
       let key = deck[deckCursor]
       let guard = 0
       while (key === current && guard < deck.length) {
@@ -689,7 +740,7 @@
       else if (state === "no-upstream" || state === "no-commits") weight += 1.6
       else if (state === "clean") weight += 0.2
       if (entry.keep) weight += 2.2
-      if (favorites.has(key)) weight += 1.2
+      if (ui.isFavorite(app)) weight += 1.2
       const openedAt = entry.last_opened ? Date.parse(entry.last_opened) : 0
       const touched = Math.max((Number(app.mtime) || 0) * 1000, openedAt || 0)
       const days = touched ? Math.max(0, (Date.now() - touched) / 86400000) : 365
@@ -768,34 +819,8 @@
     }
 
     function reloadApp() {
-      closeMenu(false)
+      ui.closeMenu(false)
       location.reload()
-    }
-
-    function readFavorites() {
-      try {
-        const stored = JSON.parse(localStorage.getItem("ribbon:favorites") || "[]")
-        if (Array.isArray(stored)) {
-          return new Set(stored.filter(function (item) {
-            return typeof item === "string"
-          }))
-        }
-      } catch (_) { /* ignore unreadable favorites */ }
-      return new Set()
-    }
-
-    function saveFavorites() {
-      try {
-        localStorage.setItem("ribbon:favorites", JSON.stringify(Array.from(favorites)))
-      } catch (_) { /* storage may be unavailable */ }
-    }
-
-    function isFavorite(app) {
-      return !!app && favorites.has(bar.appKey(app))
-    }
-
-    function currentApp() {
-      return index >= 0 ? apps[index] : null
     }
 
     function cardAddress(app) {
@@ -864,7 +889,7 @@
     }
 
     function setCardOpen(open) {
-      const app = currentApp()
+      const app = ui.currentApp()
       if (open) {
         if (!app || app.kind !== "page" || cardOpen) return
         cardOpen = true
@@ -898,63 +923,6 @@
       })
     }
 
-    function updateCurrentStar() {
-      const app = currentApp()
-      const favorite = isFavorite(app)
-      const name = app ? app.title || "this app" : "this app"
-      const label = (favorite ? "Remove " : "Add ") +
-        name + (favorite ? " from favorites" : " to favorites")
-      for (let i = 0; i < starButtons.length; i += 1) {
-        const button = starButtons[i]
-        button.disabled = !app
-        button.setAttribute("aria-pressed", favorite ? "true" : "false")
-        button.textContent = favorite ? "★" : "☆"
-        button.title = label
-        button.setAttribute("aria-label", label)
-      }
-    }
-
-    function updateCurrentMeta() {
-      const app = currentApp()
-      const entry = app ? signals[bar.appKey(app)] || {} : {}
-      const bits = []
-      if (app) {
-        if (entry.last_opened) {
-          bits.push("opened " + relativeTime(entry.last_opened))
-        } else {
-          bits.push("never opened")
-        }
-        if (app.mtime) bits.push("touched " + relativeTime(app.mtime * 1000))
-        if (entry.opens) {
-          bits.push(entry.opens + (entry.opens === 1 ? " open" : " opens"))
-        }
-        if (entry.keep) bits.push("kept")
-        if (bar.isParked(entry)) bits.push("parked")
-      }
-      menuCurrentMeta.textContent = bits.join(" · ")
-      const keep = !!entry.keep
-      const park = bar.isParked(entry)
-      keepButton.disabled = !app
-      parkButton.disabled = !app
-      keepButton.setAttribute("aria-pressed", keep ? "true" : "false")
-      parkButton.setAttribute("aria-pressed", park ? "true" : "false")
-      keepButton.textContent = keep ? "Kept" : "Keep"
-      parkButton.textContent = park ? "Parked" : "Park"
-    }
-
-    function relativeTime(value) {
-      const at = typeof value === "number" ? value : Date.parse(value)
-      if (!at) return "never"
-      const minutes = Math.round((Date.now() - at) / 60000)
-      if (minutes < 1) return "just now"
-      if (minutes < 60) return minutes + "m ago"
-      const hours = Math.round(minutes / 60)
-      if (hours < 24) return hours + "h ago"
-      const days = Math.round(hours / 24)
-      if (days < 30) return days + "d ago"
-      return Math.round(days / 30) + "mo ago"
-    }
-
     function mergeSignals(incoming) {
       if (!incoming) return
       Object.keys(incoming).forEach(function (key) {
@@ -971,7 +939,7 @@
     }
 
     function signal(name, value) {
-      const app = currentApp()
+      const app = ui.currentApp()
       if (!app) return
       const key = bar.appKey(app)
       const entry = Object.assign({}, signals[key] || {})
@@ -993,10 +961,10 @@
       entry.updated = now.toISOString()
       signals[key] = entry
       if (name === "keep" || name === "park") deck = []
-      updateCurrentMeta()
-      if (menuOpen) {
+      ui.updateCurrentMeta()
+      if (ui.isMenuOpen()) {
         renderChannels()
-        renderMenu(searchInput.value)
+        ui.renderMenu(searchInput.value)
       }
       if (!ribbonToken) return
       fetch(new URL("signal", scriptBase).href, {
@@ -1014,108 +982,13 @@
           if (!data || !data.ok || !data.state || !data.state.assets) return
           mergeSignals(data.state.assets)
           if (name === "keep" || name === "park") deck = []
-          updateCurrentMeta()
-          if (menuOpen) {
+          ui.updateCurrentMeta()
+          if (ui.isMenuOpen()) {
             renderChannels()
-            renderMenu(searchInput.value)
+            ui.renderMenu(searchInput.value)
           }
         })
         .catch(function () { /* the local signal stands */ })
-    }
-
-    function menuLights(git) {
-      const lights = bar.gitLights(git)
-      const classes = [ lights.repoClass, lights.changesClass, lights.remoteClass ]
-      const wrap = document.createElement("span")
-      wrap.className = "menu-leds"
-      wrap.setAttribute("role", "img")
-      for (let i = 0; i < classes.length; i += 1) {
-        const dot = document.createElement("span")
-        dot.className = "led " + classes[i]
-        dot.setAttribute("aria-hidden", "true")
-        wrap.appendChild(dot)
-      }
-      const label = [
-        bar.repoTip(git),
-        bar.changesTip(git, lights.dirty, lights.count),
-        bar.remoteTip(git, lights.hasRemote)
-      ].join(". ")
-      wrap.setAttribute("aria-label", label)
-      wrap.title = label
-      return wrap
-    }
-
-    function favoriteRow(app, appIndex) {
-      const favorite = isFavorite(app)
-      const row = document.createElement("div")
-      row.className = "menu-row" + (appIndex === index ? " is-current" : "")
-
-      const open = document.createElement("button")
-      open.type = "button"
-      open.className = "menu-app"
-      open.setAttribute("data-app", String(appIndex))
-      if (appIndex === index) open.setAttribute("aria-current", "true")
-
-      const title = document.createElement("span")
-      title.className = "menu-app-title"
-      if (app.icon) {
-        const glyph = document.createElement("span")
-        glyph.className = "menu-app-glyph"
-        glyph.textContent = app.icon
-        glyph.title = app.type || "Project"
-        glyph.setAttribute("aria-hidden", "true")
-        if (app.color) glyph.style.color = app.color
-        title.appendChild(glyph)
-      }
-      title.appendChild(document.createTextNode(app.title || "Untitled"))
-      const entry = signals[bar.appKey(app)] || {}
-      if (entry.keep || bar.isParked(entry)) {
-        const flag = document.createElement("span")
-        flag.className = "menu-app-flag"
-        flag.textContent = bar.isParked(entry) ? "parked" : "kept"
-        title.appendChild(flag)
-      }
-
-      const path = app.path || app.dir || ""
-      const dir = document.createElement("span")
-      dir.className = "menu-app-dir"
-      dir.textContent = path && path !== "." ? "/" + path : "/"
-
-      open.appendChild(title)
-      open.appendChild(dir)
-
-      const star = document.createElement("button")
-      star.type = "button"
-      star.className = "row-star"
-      star.setAttribute("data-star", bar.appKey(app))
-      star.setAttribute("aria-pressed", favorite ? "true" : "false")
-      star.title = favorite ? "Remove from favorites" : "Add to favorites"
-      star.setAttribute(
-        "aria-label",
-        (favorite ? "Remove " : "Add ") +
-          (app.title || "app") +
-          (favorite ? " from favorites" : " to favorites")
-      )
-      star.textContent = favorite ? "★" : "☆"
-
-      row.appendChild(menuLights(app.git))
-      row.appendChild(open)
-      row.appendChild(star)
-      if (canDelete) {
-        const remove = document.createElement("button")
-        remove.type = "button"
-        remove.className = "row-delete"
-        remove.setAttribute("data-delete", bar.appKey(app))
-        remove.setAttribute("aria-haspopup", "dialog")
-        remove.title = "Delete this folder…"
-        remove.setAttribute(
-          "aria-label",
-          "Delete " + (app.title || bar.appKey(app)) + " folder"
-        )
-        remove.textContent = "✕"
-        row.appendChild(remove)
-      }
-      return row
     }
 
     function buildChannels() {
@@ -1160,6 +1033,7 @@
         activeChannel = "all"
         saveChannel()
       }
+      ui.setChannel(activeChannel)
       menuChannels.textContent = ""
       list.forEach(function (channel) {
         const chip = document.createElement("button")
@@ -1180,113 +1054,12 @@
       })
     }
 
-    function renderMenu(query) {
-      const needle = (query || "").trim().toLowerCase()
-      menuFavList.textContent = ""
-      menuAllList.textContent = ""
-      let favoriteCount = 0
-      let otherCount = 0
-      const rows = []
-
-      apps.forEach(function (app, appIndex) {
-        if (!channelMatches(app, activeChannel)) return
-        if (!bar.matchesQuery(app, needle)) return
-        rows.push({ app: app, appIndex: appIndex })
-      })
-
-      rows.sort(function (a, b) {
-        const rankA = bar.gitWorkRank(a.app)
-        const rankB = bar.gitWorkRank(b.app)
-        if (rankA.green !== rankB.green) return rankA.green - rankB.green
-        if (rankA.severity !== rankB.severity) return rankB.severity - rankA.severity
-        return a.appIndex - b.appIndex
-      })
-
-      rows.forEach(function (entry) {
-        const app = entry.app
-        const appIndex = entry.appIndex
-        if (isFavorite(app)) {
-          menuFavList.appendChild(favoriteRow(app, appIndex))
-          favoriteCount += 1
-        } else {
-          menuAllList.appendChild(favoriteRow(app, appIndex))
-          otherCount += 1
-        }
-      })
-
-      menuFavSection.hidden = favoriteCount === 0
-      menuAllSection.hidden = otherCount === 0
-      menuEmpty.hidden = favoriteCount + otherCount > 0
-      menuEmpty.textContent = activeChannel === "all"
-        ? "No apps match."
-        : "Nothing in this channel."
-      if (activeChannel === "all") {
-        menuAllHeading.textContent = favoriteCount ? "Other apps" : "All apps"
-      } else {
-        menuAllHeading.textContent = channelLabel(activeChannel)
-      }
-    }
-
-    function openMenu() {
-      if (!apps.length) return
-      if (menuOpen) {
-        searchInput.focus()
-        searchInput.select()
-        return
-      }
-      menuOpen = true
-      menuEl.hidden = false
-      titleButton.setAttribute("aria-expanded", "true")
-      searchInput.value = ""
-      renderChannels()
-      renderMenu("")
-      updateCurrentStar()
-      updateCurrentMeta()
-      requestAnimationFrame(function () {
-        searchInput.focus()
-        searchInput.select()
-      })
-    }
-
-    function closeMenu(returnFocus) {
-      if (!menuOpen) return
-      menuOpen = false
-      menuEl.hidden = true
-      titleButton.setAttribute("aria-expanded", "false")
-      if (returnFocus) titleButton.focus()
-    }
-
-    function toggleMenu() {
-      if (menuOpen) closeMenu(true)
-      else openMenu()
-    }
-
-    function toggleFavorite(app, focusStar) {
-      const key = bar.appKey(app)
-      if (!key) return
-      if (favorites.has(key)) favorites.delete(key)
-      else favorites.add(key)
-      saveFavorites()
-      renderMenu(searchInput.value)
-      updateCurrentStar()
-      if (focusStar) {
-        const stars = menuEl.querySelectorAll("[data-star]")
-        for (let i = 0; i < stars.length; i += 1) {
-          if (stars[i].getAttribute("data-star") === key) {
-            stars[i].focus()
-            break
-          }
-        }
-      }
-    }
-
     function removeDeletedApp(app) {
       const key = bar.appKey(app)
       apps = apps.filter(function (item) {
         return bar.appKey(item) !== key
       })
-      favorites.delete(key)
-      saveFavorites()
+      ui.removeFavorite(app)
       if (signals[key]) delete signals[key]
       deck = deck.filter(function (item) { return item !== key })
       if (deckCursor > deck.length) deckCursor = 0
@@ -1324,7 +1097,7 @@
       deleteReady = false
       deleteOverlay.hidden = true
       deleteStatus.textContent = ""
-      if (reopen && apps.length) openMenu()
+      if (reopen && apps.length) ui.openMenu()
     }
 
     function showDeleteError(data) {
@@ -1340,7 +1113,7 @@
       if (!canDelete || !app) return
       const dir = app.path || app.dir || ""
       if (!dir || dir === ".") return
-      closeMenu(false)
+      ui.closeMenu(false)
       resetDeletePanel(app)
       const request = ++deleteRequest
       deleteCancel.focus()
@@ -1428,7 +1201,7 @@
           if (wasCurrent) {
             location.assign(fallback ? fallback.url : "/")
           } else {
-            openMenu()
+            ui.openMenu()
           }
         })
         .catch(function (error) {
@@ -1491,7 +1264,7 @@
         gitAction = "pages-entry"
       }
 
-      const app = currentApp()
+      const app = ui.currentApp()
       const titles = {
         init: "Create a Git repository",
         commit: "Commit changes",
@@ -1586,7 +1359,7 @@
           : "Update " + ((app && app.title) || detail.branch || "app")
       }
       gitNameField.hidden = gitAction !== "remote"
-      if (!gitNameField.hidden) gitName.value = bar.defaultRepoName(currentApp())
+      if (!gitNameField.hidden) gitName.value = bar.defaultRepoName(ui.currentApp())
       gitVisibilityField.hidden = gitAction !== "remote"
       if (!gitVisibilityField.hidden) {
         for (let i = 0; i < gitVisibilityInputs.length; i += 1) {
@@ -1672,9 +1445,9 @@
     }
 
     function openGitPanel(focus) {
-      const app = currentApp()
+      const app = ui.currentApp()
       if (!app || !gitOverlay.hidden) return
-      closeMenu(false)
+      ui.closeMenu(false)
       closeTip()
       gitReturnFocus = document.activeElement
       gitOverlay.hidden = false
@@ -1710,7 +1483,7 @@
         })
         .then(function (detail) {
           setGit(detail)
-          if (currentApp()) currentApp().git = detail
+          if (ui.currentApp()) ui.currentApp().git = detail
           renderGitPanel(detail, focus, "")
         })
         .catch(function (error) {
@@ -1762,7 +1535,7 @@
 
     function submitGitAction() {
       if (gitBusy || !gitAction) return
-      const app = currentApp()
+      const app = ui.currentApp()
       if (!app) return
 
       const payload = { action: gitAction, dir: app.path || app.dir || "" }
@@ -1819,7 +1592,7 @@
           }
           if (data.status) {
             setGit(data.status)
-            if (currentApp()) currentApp().git = data.status
+            if (ui.currentApp()) ui.currentApp().git = data.status
           }
           let message = {
             init: "Repository created and first commit made.",
@@ -1953,104 +1726,10 @@
       setManual(false)
     })
 
-    titleButton.addEventListener("click", toggleMenu)
-    starTitle.addEventListener("click", function () {
-      const app = currentApp()
-      if (app) toggleFavorite(app, false)
-      starTitle.focus()
-    })
-    starCurrent.addEventListener("click", function () {
-      const app = currentApp()
-      if (app) toggleFavorite(app, false)
-      starCurrent.focus()
-    })
-    keepButton.addEventListener("click", function () {
-      const entry = signals[bar.appKey(currentApp())] || {}
-      signal("keep", !entry.keep)
-    })
-    parkButton.addEventListener("click", function () {
-      const entry = signals[bar.appKey(currentApp())] || {}
-      signal("park", !bar.isParked(entry))
-    })
-    menuChannels.addEventListener("click", function (event) {
-      const chip = event.target && event.target.closest
-        ? event.target.closest("[data-channel]")
-        : null
-      if (!chip) return
-      activeChannel = chip.getAttribute("data-channel") || "all"
-      saveChannel()
-      deck = []
-      deckChannel = activeChannel
-      deckCursor = 0
-      renderChannels()
-      renderMenu(searchInput.value)
-      searchInput.focus()
-    })
-    searchInput.addEventListener("input", function () {
-      renderMenu(searchInput.value)
-    })
-    searchInput.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") {
-        event.preventDefault()
-        closeMenu(true)
-        return
-      }
-      if (event.key === "Enter") {
-        const first = menuEl.querySelector(".menu-app")
-        if (first) {
-          event.preventDefault()
-          location.assign(apps[Number(first.getAttribute("data-app"))].url)
-        }
-        return
-      }
-      if (event.key === "ArrowDown") {
-        const first = menuEl.querySelector(".menu-app")
-        if (first) {
-          event.preventDefault()
-          first.focus()
-        }
-      }
-    })
-    menuEl.addEventListener("click", function (event) {
-      const remove = event.target && event.target.closest
-        ? event.target.closest(".row-delete")
-        : null
-      if (remove) {
-        const key = remove.getAttribute("data-delete")
-        for (let i = 0; i < apps.length; i += 1) {
-          if (bar.appKey(apps[i]) === key) {
-            openDeletePanel(apps[i])
-            break
-          }
-        }
-        return
-      }
-
-      const star = event.target && event.target.closest
-        ? event.target.closest(".row-star")
-        : null
-      if (star) {
-        for (let i = 0; i < apps.length; i += 1) {
-          if (bar.appKey(apps[i]) === star.getAttribute("data-star")) {
-            toggleFavorite(apps[i], true)
-            break
-          }
-        }
-        return
-      }
-
-      const row = event.target && event.target.closest
-        ? event.target.closest(".menu-app")
-        : null
-      if (row) {
-        location.assign(apps[Number(row.getAttribute("data-app"))].url)
-      }
-    })
     document.addEventListener("pointerdown", function (event) {
-      if (!menuOpen) return
       const path = event.composedPath ? event.composedPath() : []
       if (path.indexOf(menuEl) !== -1 || path.indexOf(titleButton) !== -1) return
-      closeMenu(false)
+      ui.closeMenu(false)
     }, true)
 
     ledsWrap.addEventListener("click", function (event) {
@@ -2183,19 +1862,19 @@
         }
         return
       }
-      if (key === "Escape" && menuOpen) {
-        closeMenu(true)
+      if (key === "Escape" && ui.isMenuOpen()) {
+        ui.closeMenu(true)
         event.preventDefault()
         event.stopPropagation()
         return
       }
       if (key === "/") {
-        openMenu()
+        ui.openMenu()
         event.preventDefault()
         event.stopPropagation()
         return
       }
-      if (menuOpen) return
+      if (ui.isMenuOpen()) return
       if (key === "Escape" && ledTip.classList.contains("is-open")) {
         closeTip()
         event.preventDefault()
@@ -2211,10 +1890,10 @@
         if (event.shiftKey) reloadApp()
         else drift()
       } else if (key === "k" || key === "K") {
-        const entry = signals[bar.appKey(currentApp())] || {}
+        const entry = signals[bar.appKey(ui.currentApp())] || {}
         signal("keep", !entry.keep)
       } else if (key === "p" || key === "P") {
-        const entry = signals[bar.appKey(currentApp())] || {}
+        const entry = signals[bar.appKey(ui.currentApp())] || {}
         signal("park", !bar.isParked(entry))
       } else if (key === "h" || key === "H") toggleHidden()
       else handled = false
@@ -2249,11 +1928,11 @@
         setCardOpen(arguments.length ? !!on : !cardOpen)
       },
       keep: function (on) {
-        const entry = signals[bar.appKey(currentApp())] || {}
+        const entry = signals[bar.appKey(ui.currentApp())] || {}
         signal("keep", typeof on === "boolean" ? on : !entry.keep)
       },
       park: function (on) {
-        const entry = signals[bar.appKey(currentApp())] || {}
+        const entry = signals[bar.appKey(ui.currentApp())] || {}
         signal("park", typeof on === "boolean" ? on : !bar.isParked(entry))
       },
       channel: function () { return activeChannel },
@@ -2278,7 +1957,7 @@
       applyApps()
       if (!openedRecorded) {
         openedRecorded = true
-        if (currentApp()) signal("open", true)
+        if (ui.currentApp()) signal("open", true)
       }
     }
 
@@ -2290,7 +1969,7 @@
     })
     if (!openedRecorded) {
       openedRecorded = true
-      if (currentApp()) signal("open", true)
+      if (ui.currentApp()) signal("open", true)
     }
     return update
   }

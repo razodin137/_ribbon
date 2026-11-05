@@ -95,14 +95,55 @@
   let tipPinned = false
   let tipTimer = 0
   const hoverCapable = window.matchMedia("(hover: hover)").matches
-  const favorites = readFavorites()
-  let menuOpen = false
   let gitToken = ""
   let gitDetail = null
   let gitAction = null
   let gitBusy = false
   let gitBlocked = false
   let gitReturnFocus = null
+
+  const ui = bar.createBar({
+    root: document,
+    refs: {
+      menuEl: menuEl,
+      menuCurrentTitle: menuCurrentTitle,
+      menuCurrentMeta: null,
+      menuChannels: null,
+      keepButton: null,
+      parkButton: null,
+      starButtons: starButtons,
+      searchInput: searchInput,
+      menuFavSection: menuFavSection,
+      menuAllSection: menuAllSection,
+      menuFavList: menuFavList,
+      menuAllList: menuAllList,
+      menuAllHeading: menuAllHeading,
+      menuEmpty: menuEmpty,
+      titleButton: titleButton,
+      ledButtons: ledButtons,
+      ledsWrap: ledsWrap,
+      ledTip: ledTip,
+      ledRepo: ledRepo,
+      ledChanges: ledChanges,
+      ledRemote: ledRemote,
+      tipRepoDot: tipRepoDot,
+      tipChangesDot: tipChangesDot,
+      tipRemoteDot: tipRemoteDot,
+      tipRepoText: tipRepoText,
+      tipChangesText: tipChangesText,
+      tipRemoteText: tipRemoteText
+    },
+    apps: apps,
+    index: index,
+    signals: {},
+    canDelete: false,
+    channel: {
+      id: "all",
+      matches: function () { return true },
+      label: function () { return "All apps" }
+    },
+    onSelect: function (app, appIndex) { setApp(appIndex) }
+  })
 
   frame.addEventListener("load", wireFrame)
 
@@ -114,8 +155,10 @@
     menuCurrentTitle.textContent = "No apps listed"
     countEl.textContent = "00 / 00"
     disablePaging()
+    ui.setApps([])
+    ui.setIndex(-1)
     setGit(null)
-    updateCurrentStar()
+    ui.updateCurrentStar()
     applyHidden()
   } else {
     let start = 0
@@ -160,65 +203,9 @@
     setManual(false)
   })
 
-  titleButton.addEventListener("click", toggleMenu)
-  starTitle.addEventListener("click", function () {
-    const app = currentApp()
-    if (app) toggleFavorite(app, false)
-    starTitle.focus()
-  })
-  starCurrent.addEventListener("click", function () {
-    const app = currentApp()
-    if (app) toggleFavorite(app, false)
-    starCurrent.focus()
-  })
-  searchInput.addEventListener("input", function () {
-    renderMenu(searchInput.value)
-  })
-  searchInput.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") {
-      event.preventDefault()
-      closeMenu(true)
-      return
-    }
-    if (event.key === "Enter") {
-      const first = menuEl.querySelector(".menu-app")
-      if (first) {
-        event.preventDefault()
-        setApp(Number(first.getAttribute("data-app")))
-      }
-      return
-    }
-    if (event.key === "ArrowDown") {
-      const first = menuEl.querySelector(".menu-app")
-      if (first) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-  })
-  menuEl.addEventListener("click", function (event) {
-    const star = event.target && event.target.closest
-      ? event.target.closest(".row-star")
-      : null
-    if (star) {
-      for (let i = 0; i < apps.length; i += 1) {
-        if (bar.appKey(apps[i]) === star.getAttribute("data-star")) {
-          toggleFavorite(apps[i], true)
-          break
-        }
-      }
-      return
-    }
-
-    const row = event.target && event.target.closest
-      ? event.target.closest(".menu-app")
-      : null
-    if (row) setApp(Number(row.getAttribute("data-app")))
-  })
   document.addEventListener("pointerdown", function (event) {
-    if (!menuOpen) return
     if (barEl.contains(event.target)) return
-    closeMenu(false)
+    ui.closeMenu(false)
   }, true)
 
   ledsWrap.addEventListener("click", function (event) {
@@ -261,8 +248,9 @@
   function setApp(next, updateHash) {
     if (!apps.length) return
     closeTip()
-    closeMenu(false)
+    ui.closeMenu(false)
     index = (next + apps.length) % apps.length
+    ui.setIndex(index)
     const app = apps[index]
 
     titleText.textContent = app.title || "Untitled"
@@ -283,7 +271,7 @@
     }
     setGit(app.git)
     refreshGit(app)
-    updateCurrentStar()
+    ui.updateCurrentStar()
 
     if (apps.length < 2) disablePaging()
 
@@ -433,7 +421,7 @@
   }
 
   function reloadApp() {
-    closeMenu(false)
+    ui.closeMenu(false)
     if (!apps.length) return
     if (apps[index].kind === "project" || apps[index].kind === "markdown") {
       setApp(index, false)
@@ -443,211 +431,6 @@
       frame.contentWindow.location.reload()
     } catch (error) {
       frame.src = apps[index].url
-    }
-  }
-
-  function readFavorites() {
-    try {
-      const stored = JSON.parse(localStorage.getItem("ribbon:favorites") || "[]")
-      if (Array.isArray(stored)) {
-        return new Set(stored.filter(function (item) {
-          return typeof item === "string"
-        }))
-      }
-    } catch (error) { /* ignore unreadable favorites */ }
-    return new Set()
-  }
-
-  function saveFavorites() {
-    try {
-      localStorage.setItem("ribbon:favorites", JSON.stringify(Array.from(favorites)))
-    } catch (error) { /* storage may be unavailable */ }
-  }
-
-  function isFavorite(app) {
-    return !!app && favorites.has(bar.appKey(app))
-  }
-
-  function currentApp() {
-    return index >= 0 ? apps[index] : null
-  }
-
-  function updateCurrentStar() {
-    const app = currentApp()
-    const favorite = isFavorite(app)
-    const name = app ? app.title || "this app" : "this app"
-    const label = (favorite ? "Remove " : "Add ") +
-      name + (favorite ? " from favorites" : " to favorites")
-    for (let i = 0; i < starButtons.length; i += 1) {
-      const button = starButtons[i]
-      button.disabled = !app
-      button.setAttribute("aria-pressed", favorite ? "true" : "false")
-      button.textContent = favorite ? "★" : "☆"
-      button.title = label
-      button.setAttribute("aria-label", label)
-    }
-  }
-
-  function menuLights(git) {
-    const lights = bar.gitLights(git)
-    const classes = [ lights.repoClass, lights.changesClass, lights.remoteClass ]
-    const wrap = document.createElement("span")
-    wrap.className = "menu-leds"
-    wrap.setAttribute("role", "img")
-    for (let i = 0; i < classes.length; i += 1) {
-      const dot = document.createElement("span")
-      dot.className = "led " + classes[i]
-      dot.setAttribute("aria-hidden", "true")
-      wrap.appendChild(dot)
-    }
-    const label = [
-      bar.repoTip(git),
-      bar.changesTip(git, lights.dirty, lights.count),
-      bar.remoteTip(git, lights.hasRemote)
-    ].join(". ")
-    wrap.setAttribute("aria-label", label)
-    wrap.title = label
-    return wrap
-  }
-
-  function favoriteRow(app, appIndex) {
-    const favorite = isFavorite(app)
-    const row = document.createElement("div")
-    row.className = "menu-row" + (appIndex === index ? " is-current" : "")
-
-    const open = document.createElement("button")
-    open.type = "button"
-    open.className = "menu-app"
-    open.setAttribute("data-app", String(appIndex))
-    if (appIndex === index) open.setAttribute("aria-current", "true")
-
-    const title = document.createElement("span")
-    title.className = "menu-app-title"
-    if (app.icon) {
-      const glyph = document.createElement("span")
-      glyph.className = "menu-app-glyph"
-      glyph.textContent = app.icon
-      glyph.title = app.type || "Project"
-      glyph.setAttribute("aria-hidden", "true")
-      if (app.color) glyph.style.color = app.color
-      title.appendChild(glyph)
-    }
-    title.appendChild(document.createTextNode(app.title || "Untitled"))
-
-    const dir = document.createElement("span")
-    dir.className = "menu-app-dir"
-    dir.textContent = "/" + (app.dir || "")
-
-    open.appendChild(title)
-    open.appendChild(dir)
-
-    const star = document.createElement("button")
-    star.type = "button"
-    star.className = "row-star"
-    star.setAttribute("data-star", bar.appKey(app))
-    star.setAttribute("aria-pressed", favorite ? "true" : "false")
-    star.title = favorite ? "Remove from favorites" : "Add to favorites"
-    star.setAttribute(
-      "aria-label",
-      (favorite ? "Remove " : "Add ") +
-        (app.title || "app") +
-        (favorite ? " from favorites" : " to favorites")
-    )
-    star.textContent = favorite ? "★" : "☆"
-
-    row.appendChild(menuLights(app.git))
-    row.appendChild(open)
-    row.appendChild(star)
-    return row
-  }
-
-  function renderMenu(query) {
-    const needle = (query || "").trim().toLowerCase()
-    menuFavList.textContent = ""
-    menuAllList.textContent = ""
-    let favoriteCount = 0
-    let otherCount = 0
-    const rows = []
-
-    apps.forEach(function (app, appIndex) {
-      if (!bar.matchesQuery(app, needle)) return
-      rows.push({ app: app, appIndex: appIndex })
-    })
-
-    rows.sort(function (a, b) {
-      const rankA = bar.gitWorkRank(a.app)
-      const rankB = bar.gitWorkRank(b.app)
-      if (rankA.green !== rankB.green) return rankA.green - rankB.green
-      if (rankA.severity !== rankB.severity) return rankB.severity - rankA.severity
-      return a.appIndex - b.appIndex
-    })
-
-    rows.forEach(function (entry) {
-      const app = entry.app
-      const appIndex = entry.appIndex
-      if (isFavorite(app)) {
-        menuFavList.appendChild(favoriteRow(app, appIndex))
-        favoriteCount += 1
-      } else {
-        menuAllList.appendChild(favoriteRow(app, appIndex))
-        otherCount += 1
-      }
-    })
-
-    menuFavSection.hidden = favoriteCount === 0
-    menuAllSection.hidden = otherCount === 0
-    menuEmpty.hidden = favoriteCount + otherCount > 0
-    menuAllHeading.textContent = favoriteCount ? "Other apps" : "All apps"
-  }
-
-  function openMenu() {
-    if (!apps.length) return
-    if (menuOpen) {
-      searchInput.focus()
-      searchInput.select()
-      return
-    }
-    menuOpen = true
-    menuEl.hidden = false
-    titleButton.setAttribute("aria-expanded", "true")
-    searchInput.value = ""
-    renderMenu("")
-    updateCurrentStar()
-    requestAnimationFrame(function () {
-      searchInput.focus()
-      searchInput.select()
-    })
-  }
-
-  function closeMenu(returnFocus) {
-    if (!menuOpen) return
-    menuOpen = false
-    menuEl.hidden = true
-    titleButton.setAttribute("aria-expanded", "false")
-    if (returnFocus) titleButton.focus()
-  }
-
-  function toggleMenu() {
-    if (menuOpen) closeMenu(true)
-    else openMenu()
-  }
-
-  function toggleFavorite(app, focusStar) {
-    const key = bar.appKey(app)
-    if (!key) return
-    if (favorites.has(key)) favorites.delete(key)
-    else favorites.add(key)
-    saveFavorites()
-    renderMenu(searchInput.value)
-    updateCurrentStar()
-    if (focusStar) {
-      const stars = menuEl.querySelectorAll("[data-star]")
-      for (let i = 0; i < stars.length; i += 1) {
-        if (stars[i].getAttribute("data-star") === key) {
-          stars[i].focus()
-          break
-        }
-      }
     }
   }
 
@@ -699,7 +482,7 @@
       gitAction = "pages-entry"
     }
 
-    const app = currentApp()
+    const app = ui.currentApp()
     const titles = {
       init: "Create a Git repository",
       commit: "Commit changes",
@@ -794,7 +577,7 @@
         : "Update " + ((app && app.title) || detail.branch || "app")
     }
     gitNameField.hidden = gitAction !== "remote"
-    if (!gitNameField.hidden) gitName.value = bar.defaultRepoName(currentApp())
+    if (!gitNameField.hidden) gitName.value = bar.defaultRepoName(ui.currentApp())
     gitVisibilityField.hidden = gitAction !== "remote"
     if (!gitVisibilityField.hidden) {
       for (let i = 0; i < gitVisibilityInputs.length; i += 1) {
@@ -875,9 +658,9 @@
   }
 
   function openGitPanel(focus) {
-    const app = currentApp()
+    const app = ui.currentApp()
     if (!app || !gitOverlay.hidden) return
-    closeMenu(false)
+    ui.closeMenu(false)
     closeTip()
     gitReturnFocus = document.activeElement
     gitOverlay.hidden = false
@@ -971,7 +754,7 @@
 
   function submitGitAction() {
     if (gitBusy || !gitAction) return
-    const app = currentApp()
+    const app = ui.currentApp()
     if (!app) return
 
     const payload = { action: gitAction, dir: app.dir || app.url || "" }
@@ -1084,10 +867,10 @@
       doc.addEventListener("scroll", onScroll, { passive: true, capture: true })
       doc.addEventListener("pointerdown", closeTip, true)
       doc.addEventListener("pointerdown", function () {
-        closeMenu(false)
+        ui.closeMenu(false)
       }, true)
       win.addEventListener("focus", function () {
-        closeMenu(false)
+        ui.closeMenu(false)
       })
       win.addEventListener("keydown", onKey, true)
     } catch (error) {
@@ -1173,19 +956,19 @@
       }
       return
     }
-    if (key === "Escape" && menuOpen) {
-      closeMenu(true)
+    if (key === "Escape" && ui.isMenuOpen()) {
+      ui.closeMenu(true)
       event.preventDefault()
       event.stopPropagation()
       return
     }
     if (key === "/") {
-      openMenu()
+      ui.openMenu()
       event.preventDefault()
       event.stopPropagation()
       return
     }
-    if (menuOpen) return
+    if (ui.isMenuOpen()) return
     if (key === "Escape" && ledTip.classList.contains("is-open")) {
       closeTip()
       event.preventDefault()
@@ -1231,7 +1014,7 @@
     const gone = manualHidden || autoHidden
     if (gone) {
       closeTip()
-      closeMenu(false)
+      ui.closeMenu(false)
     }
     document.documentElement.classList.toggle("is-hidden", gone)
     if (gone) barEl.setAttribute("inert", "")

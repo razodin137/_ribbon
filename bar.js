@@ -1,8 +1,8 @@
 /* Ribbon bar — the shared bar: pure helpers plus createBar.
  *
- * Loaded before either host (ribbon.js or shell.js). The pure layer has no
- * DOM or state; createBar owns the bar's shared state and DOM events.
- * Everything here is exposed through window.__RIBBON_BAR__.
+ * Loaded before the host (ribbon.js). The pure layer has no DOM or state;
+ * createBar owns the bar's shared state and DOM events. Everything here is
+ * exposed through window.__RIBBON_BAR__.
  */
 (function () {
   "use strict"
@@ -145,14 +145,6 @@
     return "Up to date" + (git.upstream ? " with " + git.upstream : "")
   }
 
-  function isParked(entry) {
-    return !!(
-      entry &&
-      entry.parked_until &&
-      Date.parse(entry.parked_until) > Date.now()
-    )
-  }
-
   function createBar(options) {
     options = options || {}
     const root = options.root
@@ -251,23 +243,9 @@
         if (entry.opens) {
           bits.push(entry.opens + (entry.opens === 1 ? " open" : " opens"))
         }
-        if (entry.keep) bits.push("kept")
-        if (isParked(entry)) bits.push("parked")
       }
       if (refs.menuCurrentMeta) {
         refs.menuCurrentMeta.textContent = bits.join(" · ")
-      }
-      const keep = !!entry.keep
-      const park = isParked(entry)
-      if (refs.keepButton) {
-        refs.keepButton.disabled = !app
-        refs.keepButton.setAttribute("aria-pressed", keep ? "true" : "false")
-        refs.keepButton.textContent = keep ? "Kept" : "Keep"
-      }
-      if (refs.parkButton) {
-        refs.parkButton.disabled = !app
-        refs.parkButton.setAttribute("aria-pressed", park ? "true" : "false")
-        refs.parkButton.textContent = park ? "Parked" : "Park"
       }
     }
 
@@ -320,13 +298,6 @@
         title.appendChild(glyph)
       }
       title.appendChild(doc.createTextNode(app.title || "Untitled"))
-      const entry = signals[appKey(app)] || {}
-      if (entry.keep || isParked(entry)) {
-        const flag = doc.createElement("span")
-        flag.className = "menu-app-flag"
-        flag.textContent = isParked(entry) ? "parked" : "kept"
-        title.appendChild(flag)
-      }
 
       const path = app.path || app.dir || ""
       const dir = doc.createElement("span")
@@ -487,7 +458,6 @@
       for (let i = 0; i < ledButtons.length; i += 1) {
         if (ledButtons[i].getAttribute("data-led") === name) {
           ledButtons[i].setAttribute("aria-label", text + ". " + hint)
-          ledButtons[i].title = text + " — " + hint
           return
         }
       }
@@ -1102,24 +1072,6 @@
       })
     }
 
-    if (refs.keepButton && options.onSignal) {
-      refs.keepButton.addEventListener("click", function () {
-        const app = currentApp()
-        if (!app) return
-        const entry = signals[appKey(app)] || {}
-        options.onSignal("keep", !entry.keep)
-      })
-    }
-
-    if (refs.parkButton && options.onSignal) {
-      refs.parkButton.addEventListener("click", function () {
-        const app = currentApp()
-        if (!app) return
-        const entry = signals[appKey(app)] || {}
-        options.onSignal("park", !isParked(entry))
-      })
-    }
-
     return {
       setApps: function (next) {
         apps = Array.isArray(next) ? next : []
@@ -1171,7 +1123,6 @@
     repoTip: repoTip,
     changesTip: changesTip,
     remoteTip: remoteTip,
-    isParked: isParked,
     createBar: createBar
   }
 })()

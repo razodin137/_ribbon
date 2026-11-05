@@ -1,9 +1,3 @@
 {
-  "extends": "@37signals/stylelint-config-scss",
-  "overrides": [
-    {
-      "files": [ "*.html" ],
-      "customSyntax": "postcss-html"
-    }
-  ]
+  "extends": "@37signals/stylelint-config-scss"
 }

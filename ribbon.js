@@ -1,11 +1,8 @@
 /* Ribbon — a floating, auto-hiding switcher for a folder of HTML apps.
  *
- * Normally injected by ribbon.py. It can also be included by hand, after
- * bar.js:
+ * Injected by ribbon.py, after bar.js:
  *   <script src="/__ribbon/bar.js" defer></script>
  *   <script src="/__ribbon/ribbon.js" defer></script>
- * or, with no server, provide the list yourself before the scripts run:
- *   window.__RIBBON_APPS__ = [{ url: "/app/", title: "App" }];
  */
 (function () {
   "use strict"
@@ -87,11 +84,6 @@
   }
 
   function start() {
-    if (Array.isArray(window.__RIBBON_APPS__)) {
-      mount(window.__RIBBON_APPS__)
-      return
-    }
-
     let manifestUrl
     try {
       manifestUrl = new URL("manifest.json", scriptBase).href
@@ -240,8 +232,6 @@
             '<button class="star-btn" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>' +
           "</div>" +
           '<div class="menu-current-tools">' +
-            '<button class="tool-btn" type="button" data-tool="keep" aria-pressed="false">Keep</button>' +
-            '<button class="tool-btn" type="button" data-tool="park" aria-pressed="false">Park</button>' +
             '<span class="menu-current-hint">drift deals from the active channel</span>' +
           "</div>" +
           '<div class="menu-channels" role="group" aria-label="Channels"></div>' +
@@ -418,8 +408,6 @@
     const menuCurrentTitle = shadow.querySelector(".menu-current-title")
     const menuCurrentMeta = shadow.querySelector(".menu-current-meta")
     const menuChannels = shadow.querySelector(".menu-channels")
-    const keepButton = shadow.querySelector('[data-tool="keep"]')
-    const parkButton = shadow.querySelector('[data-tool="park"]')
     const starTitle = shadow.querySelector(".title-star")
     const starCurrent = shadow.querySelector(".menu-top .star-btn")
     const starButtons = [ starTitle, starCurrent ]
@@ -491,8 +479,6 @@
         menuCurrentTitle: menuCurrentTitle,
         menuCurrentMeta: menuCurrentMeta,
         menuChannels: menuChannels,
-        keepButton: keepButton,
-        parkButton: parkButton,
         starButtons: starButtons,
         searchInput: searchInput,
         menuFavSection: menuFavSection,
@@ -548,7 +534,6 @@
       getToken: function () { return ribbonToken },
       onSelect: function (app) { location.assign(app.url) },
       onDelete: openDeletePanel,
-      onSignal: signal,
       onChannel: function (id) {
         activeChannel = id || "all"
         saveChannel()
@@ -753,7 +738,6 @@
     function driftWeight(app, rng) {
       const key = bar.appKey(app)
       const entry = signals[key] || {}
-      if (bar.isParked(entry)) return 0
       const git = app.git || {}
       const state = git.state || ""
       let weight = 1
@@ -765,7 +749,6 @@
       else if (state === "ahead" || state === "diverged") weight += 2.2
       else if (state === "no-upstream" || state === "no-commits") weight += 1.6
       else if (state === "clean") weight += 0.2
-      if (entry.keep) weight += 2.2
       if (ui.isFavorite(app)) weight += 1.2
       const openedAt = entry.last_opened ? Date.parse(entry.last_opened) : 0
       const touched = Math.max((Number(app.mtime) || 0) * 1000, openedAt || 0)
@@ -973,20 +956,12 @@
       if (name === "open") {
         entry.opens = (Number(entry.opens) || 0) + 1
         entry.last_opened = now.toISOString()
-      } else if (name === "keep") {
-        entry.keep = !!value
-        if (entry.keep) entry.parked_until = null
-      } else if (name === "park") {
-        entry.parked_until = value
-          ? new Date(now.getTime() + 14 * 86400000).toISOString()
-          : null
       } else if (name === "note") {
         if (value) entry.note = String(value).slice(0, 500)
         else delete entry.note
       }
       entry.updated = now.toISOString()
       signals[key] = entry
-      if (name === "keep" || name === "park") deck = []
       ui.updateCurrentMeta()
       if (ui.isMenuOpen()) {
         renderChannels()
@@ -1007,7 +982,6 @@
         .then(function (data) {
           if (!data || !data.ok || !data.state || !data.state.assets) return
           mergeSignals(data.state.assets)
-          if (name === "keep" || name === "park") deck = []
           ui.updateCurrentMeta()
           if (ui.isMenuOpen()) {
             renderChannels()
@@ -1392,12 +1366,6 @@
       else if (key === "r" || key === "R") {
         if (event.shiftKey) reloadApp()
         else drift()
-      } else if (key === "k" || key === "K") {
-        const entry = signals[bar.appKey(ui.currentApp())] || {}
-        signal("keep", !entry.keep)
-      } else if (key === "p" || key === "P") {
-        const entry = signals[bar.appKey(ui.currentApp())] || {}
-        signal("park", !bar.isParked(entry))
       } else if (key === "h" || key === "H") toggleHidden()
       else handled = false
 
@@ -1429,14 +1397,6 @@
       random: drift,
       contents: function (on) {
         setCardOpen(arguments.length ? !!on : !cardOpen)
-      },
-      keep: function (on) {
-        const entry = signals[bar.appKey(ui.currentApp())] || {}
-        signal("keep", typeof on === "boolean" ? on : !entry.keep)
-      },
-      park: function (on) {
-        const entry = signals[bar.appKey(ui.currentApp())] || {}
-        signal("park", typeof on === "boolean" ? on : !bar.isParked(entry))
       },
       channel: function () { return activeChannel },
       apps: apps

@@ -1,8 +1,7 @@
 /* Ribbon bar — the one stylesheet for the bar.
  *
  * Served at /__ribbon/bar.css and adopted into the bar's shadow root by
- * ribbon.js. index.html links the same file, so the server bar and the
- * no-server shell cannot drift apart again.
+ * ribbon.js.
  */
 
 :host { all: initial; }
@@ -141,12 +140,13 @@
   text-transform: none;
   white-space: normal;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(-4px) scale(.98);
   transform-origin: top left;
   transition: opacity .15s ease, transform .18s cubic-bezier(.2, .7, .2, 1);
   pointer-events: none;
 }
-.led-tip.is-open { opacity: 1; transform: none; }
+.led-tip.is-open { opacity: 1; visibility: visible; transform: none; }
 .led-tip::before {
   content: "";
   position: absolute;
@@ -291,30 +291,6 @@
   letter-spacing: .04em;
   color: #6f6b60;
 }
-.tool-btn {
-  appearance: none;
-  -webkit-appearance: none;
-  height: 24px;
-  padding: 0 9px;
-  border: 1px solid rgba(255, 255, 255, .12);
-  border-radius: 5px;
-  background: transparent;
-  color: #a9a496;
-  font: inherit;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 10px;
-  letter-spacing: .04em;
-  cursor: pointer;
-  flex: none;
-}
-.tool-btn:hover { background: rgba(255, 255, 255, .07); color: #e9e4d6; }
-.tool-btn[aria-pressed="true"] {
-  border-color: rgba(241, 209, 138, .4);
-  background: rgba(241, 209, 138, .08);
-  color: #f1d18a;
-}
-.tool-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
-.tool-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
 
 .menu-channels {
   display: flex;
@@ -349,18 +325,6 @@
   color: #7f7b6e;
 }
 .chip[aria-pressed="true"] .chip-count { color: #c9a95e; }
-
-.menu-app-flag {
-  margin-left: 6px;
-  padding: 0 4px;
-  border: 1px solid currentcolor;
-  border-radius: 3px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 8px;
-  letter-spacing: .05em;
-  color: #c9a95e;
-  vertical-align: 1px;
-}
 
 .star-btn {
   appearance: none;
@@ -1016,6 +980,7 @@
   text-transform: uppercase;
   cursor: pointer;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(-4px);
   pointer-events: none;
   z-index: 11;
@@ -1023,7 +988,7 @@
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
-.peek.is-shown { opacity: .42; transform: none; pointer-events: auto; }
+.peek.is-shown { opacity: .42; visibility: visible; transform: none; pointer-events: auto; }
 .peek.is-shown:hover, .peek.is-shown:focus-visible { opacity: 1; }
 .peek:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 

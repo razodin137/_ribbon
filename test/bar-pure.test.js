@@ -17,7 +17,7 @@ test("exposes the pure layer", () => {
   const names = [
     "appKey", "pad", "matchesQuery", "escapeAttribute", "defaultRepoName",
     "gitLights", "gitWorkRank", "decideGitAction", "repoTip", "changesTip",
-    "remoteTip", "isParked"
+    "remoteTip"
   ]
   for (const name of names) {
     assert.equal(typeof bar[name], "function", name + " is missing")
@@ -184,13 +184,4 @@ test("tips describe the three lights", () => {
     bar.remoteTip({ repo: true, state: "clean", upstream: "origin/main" }, true),
     "Up to date with origin/main"
   )
-})
-
-test("isParked respects the snooze date", () => {
-  const future = new Date(Date.now() + 86400000).toISOString()
-  const past = new Date(Date.now() - 86400000).toISOString()
-  assert.equal(bar.isParked({ parked_until: future }), true)
-  assert.equal(bar.isParked({ parked_until: past }), false)
-  assert.equal(bar.isParked({}), false)
-  assert.equal(bar.isParked({ parked_until: "not-a-date" }), false)
 })

@@ -305,8 +305,6 @@
     node.innerHTML = overviewHtml(window.__RIBBON_CARD_APP__)
   }
 
-  window.__RIBBON_CARD_HTML__ = overviewHtml
-
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", mount)
   } else {

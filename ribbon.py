@@ -2828,6 +2828,9 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             elif name == "card.css":
                 payload = (APP_DIR / "card.css").read_bytes()
                 content_type = "text/css; charset=utf-8"
+            elif name == "bar.css":
+                payload = (APP_DIR / "bar.css").read_bytes()
+                content_type = "text/css; charset=utf-8"
             elif name == "markdown.css":
                 payload = (APP_DIR / "markdown.css").read_bytes()
                 content_type = "text/css; charset=utf-8"

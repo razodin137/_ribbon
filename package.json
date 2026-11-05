@@ -4,7 +4,7 @@
   "type": "module",
   "description": "A little bar that wraps around your vibe-coded projects, helps you surface them, and shows how far along they are.",
   "scripts": {
-    "lint": "eslint . && stylelint \"index.html\" \"card.css\" \"markdown.css\""
+    "lint": "eslint . && stylelint \"index.html\" \"bar.css\" \"card.css\" \"markdown.css\""
   },
   "devDependencies": {
     "@37signals/eslint-config": "file:/home/mrjohn/Work/tries/2026-11-03-house-style/house-style/eslint-config",

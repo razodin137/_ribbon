@@ -378,7 +378,7 @@ python3 _ribbon/ribbon.py --help           # all options, with examples
 
 ## For the very curious
 
-The folder has ten small pieces:
+The folder has eleven small pieces:
 
 ```
 _ribbon/
@@ -387,6 +387,7 @@ _ribbon/
   shell.js      the bar and window used by the no-server page
   apps.js       the list that page uses (made by --write-apps, local only)
   card.js       the contents card: file grid, hidden files, and .gitignore
+  bar.css       the one stylesheet for the bar, shared by both versions
   card.css      the look of that card
   markdown.css  the look of a rendered Markdown document
   ribbon.py     finds the apps, serves them, and saves state

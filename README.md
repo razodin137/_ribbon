@@ -285,7 +285,8 @@ npm run check
 `npm run check` runs ESLint, Stylelint, and the tests. It also checks that
 the embedded copies in `ribbon.py` match the files on disk. The tests check
 the small helpers in `bar.js`. They also fail if a function that belongs in
-`bar.js` is written again in `ribbon.js`.
+`bar.js` is written again in `ribbon.js`, or if a selector in `ribbon.js` does
+not exist in the bar markup.
 
 Ribbon ships with the JavaScript and CSS embedded in `ribbon.py`. If you edit
 any of those browser files, rebuild the embedded copy:
@@ -294,6 +295,9 @@ any of those browser files, rebuild the embedded copy:
 python3 build.py           # embed the current JS and CSS
 python3 build.py --check   # fail if the embedded copy is stale
 ```
+
+Both forms also refuse a CSS asset that contains `</style`. The bar pastes
+`bar.css` straight into a `<style>` tag, so that sequence would close it early.
 
 While you are working on the bar, skip the rebuild and run
 `python3 ribbon.py --dev`. That reads the JS and CSS from disk, so every
@@ -320,9 +324,43 @@ The browser files are the source. `build.py` compresses them and writes the
 result into `ribbon.py`, which is why the release copy works on its own.
 Run it after every change to those files, or use `--dev` while editing.
 
-The bar has one source of truth. The static shell lives in `ribbon.py`, because
-it is rendered into the page before any script runs. Its behavior lives in
-`bar.js`; new bar features go there, not in `ribbon.js`.
+The bar has two halves, and both have to change together. The static shell is
+`BAR_MARKUP` in `ribbon.py`, because it is rendered into the page before any
+script runs. Its behavior is `bar.js`; new bar features go there, not in
+`ribbon.js`. A new button means adding its markup to `BAR_MARKUP` in
+`ribbon.py` and its behavior to `bar.js`.
+
+## Known limitations
+
+The bar arrives as an inline boot script and an inline `<style>` block. If a
+page sets its own `Content-Security-Policy` in a `<meta>` tag and that policy
+blocks inline code, the browser drops both and the page appears without the
+bar. Ribbon does not read the page's policy and does not attach a nonce or a
+hash, so a strict policy cannot authorize the bar. A policy that allows
+`'unsafe-inline'` and has no nonce or hash lets it through; otherwise relax or
+remove the policy while you use Ribbon.
+
+The contents card and the Markdown view are built by Ribbon, so they do not
+have this problem.
+
+Ribbon puts its bar at the top of `<body>`, before the page's own content, so
+the bar is there at first paint and cannot pop in. That position has a cost:
+positional selectors see Ribbon's nodes first. `body > :first-child` matches
+the injected `<style>`, and rules built on it (`body > :first-child + *`, for
+example) skip past the rest of Ribbon's markup. A page that styles its own
+first child by position should give that element a class instead.
+
+Ribbon decides whether a page already has the bar by looking for the text
+`data-ribbon-host` or `/__ribbon/ribbon.js` anywhere in the page. That is a
+plain text match, not a look at the page's tags. A page that only mentions
+either string in its own content — a document about Ribbon, a code sample, or
+a page saved from Ribbon before — is treated as already having the bar and is
+sent unchanged. The bar then does not appear. This is the safe direction: the
+match is how Ribbon avoids adding a second bar to a page that already has one,
+and both strings are specific enough that ordinary pages do not contain them.
+The test reads the whole document, including visible body text, so a matching
+page loses the bar until the mention goes away. A saved page also keeps the
+asset URLs it was saved with, because Ribbon passes it through untouched.
 
 ## If something goes wrong
 
@@ -330,6 +368,8 @@ it is rendered into the page before any script runs. Its behavior lives in
 | --- | --- |
 | It says **No folders found** | Your pages may have no `<title>`. Try `--include-untitled`, or use `--root` to pick the right folder. |
 | The bar disappeared | Press **H**, or click the small **RIBBON** tab in the top right. |
+| The bar is missing on one page | That page's `Content-Security-Policy` may block inline code. See [Known limitations](#known-limitations). |
+| The bar is missing on a page that mentions Ribbon | The page contains `data-ribbon-host` or `/__ribbon/ribbon.js` as text. Ribbon reads that as a page that already has the bar. See [Known limitations](#known-limitations). |
 | It shows the wrong folder | Add `--root ~/the/folder/you/want`. |
 | The address is already in use | Ribbon tries the next port by itself. Read the address it prints. |
 | The Git buttons are greyed out | Start Ribbon on `127.0.0.1` or `localhost`, and do not use `--no-git-actions`. |

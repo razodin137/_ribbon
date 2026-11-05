@@ -1,0 +1,52 @@
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import test from "node:test"
+import { fileURLToPath } from "node:url"
+
+// BOOT_SCRIPT in ribbon.py runs before ribbon.js and reads the same session
+// storage keys. The two halves have to agree or the bar flashes visible on
+// every load, so pin them together here.
+const root = dirname(dirname(fileURLToPath(import.meta.url)))
+const ribbonJs = readFileSync(join(root, "ribbon.js"), "utf8")
+const ribbonPy = readFileSync(join(root, "ribbon.py"), "utf8")
+
+function jsConstant(name) {
+  const match = ribbonJs.match(new RegExp("const " + name + ' = "([^"]+)"'))
+  assert.ok(match, name + " is missing from ribbon.js")
+  return match[1]
+}
+
+const storageKey = jsConstant("STORAGE_KEY")
+const scrollKey = jsConstant("SCROLL_KEY")
+
+const start = ribbonPy.indexOf("BOOT_SCRIPT = (")
+const end = ribbonPy.indexOf("\n)\n", start)
+assert.ok(start >= 0 && end > start, "BOOT_SCRIPT is missing from ribbon.py")
+const boot = ribbonPy.slice(start, end)
+
+test("the boot script reads the hidden key ribbon.js writes", () => {
+  assert.ok(
+    boot.includes('sessionStorage.getItem("' + storageKey + '")'),
+    "BOOT_SCRIPT does not read " + storageKey
+  )
+})
+
+test("the boot script tests for the value ribbon.js writes", () => {
+  const match = ribbonJs.match(
+    /setItem\(STORAGE_KEY,\s*hidden\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"\)/
+  )
+  assert.ok(match, "ribbon.js does not write STORAGE_KEY as a flag")
+  assert.ok(
+    boot.includes('getItem("' + storageKey + '")==="' + match[1] + '"'),
+    "BOOT_SCRIPT does not compare " + storageKey + " to " + match[1]
+  )
+})
+
+test("the boot script compares the scroll key to the same location", () => {
+  assert.match(ribbonJs, /sessionStorage\.setItem\(SCROLL_KEY, location\.href\)/)
+  assert.ok(
+    boot.includes('getItem("' + scrollKey + '")===location.href'),
+    "BOOT_SCRIPT does not compare " + scrollKey + " to location.href"
+  )
+})

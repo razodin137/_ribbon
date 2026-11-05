@@ -172,6 +172,7 @@
     let channelId = channel.id || "all"
     const favorites = readFavorites()
     let menuOpen = false
+    let stale = false
     let tipPinned = false
     let tipTimer = 0
     let tipIsOpen = false
@@ -288,13 +289,18 @@
     function favoriteRow(app, appIndex) {
       const favorite = isFavorite(app)
       const row = doc.createElement("div")
-      row.className = "menu-row" + (appIndex === index ? " is-current" : "")
+      row.className = "menu-row" + (appIndex === index ? " is-current" : "") +
+        (stale ? " is-stale" : "")
 
       const open = doc.createElement("button")
       open.type = "button"
       open.className = "menu-app"
       open.setAttribute("data-app", String(appIndex))
       if (appIndex === index) open.setAttribute("aria-current", "true")
+      if (stale) {
+        open.disabled = true
+        open.title = "Refreshing the app list…"
+      }
 
       const title = doc.createElement("span")
       title.className = "menu-app-title"
@@ -1085,6 +1091,10 @@
     return {
       setApps: function (next) {
         apps = Array.isArray(next) ? next : []
+        if (menuOpen) renderMenu()
+      },
+      setStale: function (next) {
+        stale = !!next
         if (menuOpen) renderMenu()
       },
       setIndex: function (next) {

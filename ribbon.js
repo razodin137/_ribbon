@@ -47,9 +47,10 @@
     }
 
     // Draw the bar from the last list straight away, then refresh it when the
-    // manifest arrives. Switching apps no longer waits on the manifest first.
+    // manifest arrives. A cached entry may name a project deleted since it was
+    // stored, so hold navigation until the first manifest settles.
     const cached = readCachedApps()
-    let update = null
+    let mounted = null
     let refreshing = null
 
     function applyManifest(data) {
@@ -63,8 +64,8 @@
           write: data.write
         }
       writeCachedApps(apps)
-      if (update) update(apps, meta)
-      else update = mount(apps, meta, refresh) || null
+      if (mounted) mounted.update(apps, meta)
+      else mounted = mount(apps, meta, refresh)
     }
 
     // No watcher reaches every platform and mount, so ask again whenever the
@@ -90,8 +91,12 @@
       if (!document.hidden) refresh()
     }
 
-    if (cached) update = mount(cached, null, refresh) || null
-    refresh()
+    if (cached) mounted = mount(cached, null, refresh, true)
+    refresh().then(function () {
+      // No manifest means the cached list is all we have. Release the hold
+      // rather than leave the bar unable to navigate.
+      if (mounted) mounted.setStale(false)
+    })
     document.addEventListener("visibilitychange", refreshIfVisible)
     window.addEventListener("focus", refresh)
   }
@@ -122,7 +127,10 @@
     return shadow
   }
 
-  function mount(rawApps, meta, refreshManifest) {
+  function mount(rawApps, meta, refreshManifest, cached) {
+    // A mount from the session cache may be one manifest round trip out of
+    // date, so navigation waits until the list is confirmed.
+    let stale = !!cached
     meta = meta || {}
     let apps = rawApps.filter(function (app) {
       return app && typeof app.url === "string" && app.url
@@ -352,12 +360,16 @@
     // Tell the browser about the pages Back and Next would open, so a click
     // is a swap rather than a fresh load. The rules live in the page, not
     // the shadow root, and are replaced whenever the list changes.
+    // Moderate, not immediate: immediate prerenders both neighbours (and their
+    // manifests) before the user shows any intent, which costs two background
+    // loads per navigation. Moderate waits for a hover or pointerdown, so a
+    // deliberate Back/Next is still near-instant without the idle traffic.
     let speculationJson = ""
     function applySpeculation() {
-      const urls = bar.neighborUrls(apps, index)
+      const urls = stale ? [] : bar.neighborUrls(apps, index)
       const json = urls.length
         ? JSON.stringify({
-          prerender: [ { source: "list", urls: urls, eagerness: "immediate" } ]
+          prerender: [ { source: "list", urls: urls, eagerness: "moderate" } ]
         })
         : ""
       if (json === speculationJson) return
@@ -384,6 +396,7 @@
       menuCurrentTitle.textContent = current.title
       countEl.textContent = (index >= 0 ? bar.pad(index + 1, apps.length) : "—") +
         " / " + bar.pad(apps.length, apps.length)
+      ui.setStale(stale)
       ui.setApps(apps)
       ui.setIndex(index)
       ui.setCanDelete(canDelete)
@@ -393,7 +406,9 @@
       ui.updateCurrentMeta()
       for (let k = 0; k < buttons.length; k += 1) {
         const act = buttons[k].getAttribute("data-act")
-        if (act !== "hide") buttons[k].disabled = apps.length < 2
+        if (act === "hide") continue
+        const held = stale && (act === "prev" || act === "next" || act === "drift")
+        buttons[k].disabled = held || apps.length < 2
       }
       contentsButton.disabled = !apps[index] || apps[index].kind !== "page"
       if (contentsButton.disabled) setCardOpen(false)
@@ -405,42 +420,26 @@
       applySpeculation()
     }
 
+    function setStale(next) {
+      next = !!next
+      if (stale === next) return
+      stale = next
+      applyApps()
+    }
+
     applyApps()
     let manualHidden = readHidden()
     let autoHidden = manualHidden ? false : readScrolled()
-    let topOffset = false
-    let savedPaddingTop = null
+    let topOffset = null
     const lastTargets = new Map()
 
-    // Reserve a strip at the top of the page for the bar, so the app's own
-    // header is not covered while you are at the very top. Scrolling down
-    // still turns the bar into an overlay that slides away.
+    // The server paints a spacer at the top of the page, so the app's own
+    // header is not covered before this file runs. Hiding the bar by hand
+    // hides the spacer too; the attribute also drives the bar's first paint.
     function setTopOffset(on, compensate) {
-      const body = document.body
-      if (!body || topOffset === on) return
+      if (topOffset === on) return
       const before = compensate ? scrollY() : 0
-
-      if (on) {
-        if (!savedPaddingTop) {
-          savedPaddingTop = {
-            value: body.style.getPropertyValue("padding-top"),
-            priority: body.style.getPropertyPriority("padding-top")
-          }
-        }
-        const base = parseFloat(window.getComputedStyle(body).paddingTop) || 0
-        body.style.setProperty("padding-top", (base + BAR_HEIGHT) + "px", "important")
-      } else if (savedPaddingTop) {
-        if (savedPaddingTop.value) {
-          body.style.setProperty(
-            "padding-top",
-            savedPaddingTop.value,
-            savedPaddingTop.priority
-          )
-        } else {
-          body.style.removeProperty("padding-top")
-        }
-      }
-
+      host.toggleAttribute("data-ribbon-hidden", !on)
       topOffset = on
       if (!compensate || before === 0) return
 
@@ -482,7 +481,7 @@
     }
 
     function go(direction) {
-      if (apps.length < 2) return
+      if (stale || apps.length < 2) return
       let target
       if (index < 0) {
         target = direction > 0 ? 0 : apps.length - 1
@@ -494,7 +493,7 @@
     }
 
     function drift() {
-      if (apps.length < 2) return
+      if (stale || apps.length < 2) return
       if (!ensureDeck()) return
       const current = bar.appKey(ui.currentApp())
       let key = deck[deckCursor]
@@ -1242,6 +1241,7 @@
       })
       if (!next.length) return
       apps = next
+      stale = false
       if (nextMeta) {
         if (nextMeta.token) ribbonToken = nextMeta.token
         if (typeof nextMeta.write === "boolean") {
@@ -1260,14 +1260,18 @@
 
     setTopOffset(!manualHidden, false)
     applyState()
-    // The head script hid the shell before this file ran. From here the
-    // is-gone/is-shown classes own the state.
-    document.documentElement.classList.remove("ribbon-hidden", "ribbon-scrolled")
+    // The boot script hid the shell before this file ran. From here the
+    // is-gone/is-shown classes own the state; the hidden attribute stays so
+    // the spacer matches the bar while the bar is hidden by hand.
+    host.removeAttribute("data-ribbon-scrolled")
     if (!openedRecorded) {
       openedRecorded = true
       if (ui.currentApp()) recordOpen()
     }
-    return update
+    return {
+      update: update,
+      setStale: setStale
+    }
   }
 
   function normalizePath(path) {

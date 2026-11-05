@@ -51,8 +51,8 @@
 }
 
 .bar.is-gone,
-:host-context(html.ribbon-hidden) .bar,
-:host-context(html.ribbon-scrolled) .bar {
+:host([data-ribbon-hidden]) .bar,
+:host([data-ribbon-scrolled]) .bar {
   transform: translateY(calc(-100% - 2px));
   opacity: 0;
   pointer-events: none;
@@ -399,6 +399,11 @@
 }
 .menu-row:hover { background: rgba(255, 255, 255, .055); }
 .menu-row.is-current { background: rgba(208, 166, 74, .1); }
+.menu-row.is-stale .menu-app {
+  opacity: .55;
+  cursor: progress;
+}
+.menu-row.is-stale:hover { background: transparent; }
 
 .menu-leds {
   display: flex;
@@ -985,7 +990,7 @@
   backdrop-filter: blur(12px);
 }
 .peek.is-shown,
-:host-context(html.ribbon-hidden) .peek {
+:host([data-ribbon-hidden]) .peek {
   opacity: .42;
   visibility: visible;
   transform: none;

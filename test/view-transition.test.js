@@ -23,3 +23,15 @@ test("the bar keeps its name in both documents and does not cross-fade", () => {
   assert.match(transition, /::view-transition-new\(ribbon-bar\)/)
   assert.match(transition, /animation: none;/)
 })
+
+test("reduced motion turns the cross-document transition off", () => {
+  const reduced = transition.slice(
+    transition.indexOf("@media (prefers-reduced-motion: reduce)")
+  )
+
+  assert.ok(reduced.length > 0, "no reduced-motion block was found")
+  assert.match(reduced, /@view-transition \{ navigation: none; \}/)
+  assert.match(reduced, /::view-transition-old\(root\)/)
+  assert.match(reduced, /::view-transition-new\(root\)/)
+  assert.match(reduced, /animation: none;/)
+})

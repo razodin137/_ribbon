@@ -10,6 +10,7 @@
   const PORT_COUNT = 20
   const PROBE_TIMEOUT_MS = 800
   const HOSTS = [ "127.0.0.1", "localhost", "[::1]" ]
+  const CACHE_KEY = "ribbon.newtab"
   const DESCRIPTION_LIMIT = 150
   const STATE_LABELS = {
     clean: "all pushed",
@@ -48,13 +49,53 @@
 
   let busy = false
 
-  function probe(host, port) {
+  function normalizeBase(value) {
+    try {
+      const url = new URL(value)
+      if (url.protocol !== "http:" && url.protocol !== "https:") return null
+      if (!HOSTS.includes(url.hostname)) return null
+      return url.origin
+    } catch (_) {
+      return null
+    }
+  }
+
+  function readCache() {
+    try {
+      const data = JSON.parse(localStorage.getItem(CACHE_KEY) || "null")
+      if (!data || typeof data !== "object") return null
+      const base = normalizeBase(data.base)
+      if (!base) return null
+      const apps = Array.isArray(data.apps) ? data.apps : []
+      return { base: base, apps: apps }
+    } catch (_) {
+      return null
+    }
+  }
+
+  function writeCache(found) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ base: found.base, apps: found.apps }))
+    } catch (_) {
+      return
+    }
+  }
+
+  function dropCache() {
+    try {
+      localStorage.removeItem(CACHE_KEY)
+    } catch (_) {
+      return
+    }
+  }
+
+  function loadManifest(base) {
     const controller = new AbortController()
     const timer = setTimeout(function () {
       controller.abort()
     }, PROBE_TIMEOUT_MS)
 
-    return fetch(`http://${host}:${port}/__ribbon/manifest.json`, {
+    return fetch(`${base}/__ribbon/manifest.json`, {
       cache: "no-store",
       signal: controller.signal
     })
@@ -64,7 +105,7 @@
       })
       .then(function (data) {
         if (!data || !Array.isArray(data.apps)) return null
-        return { base: `http://${host}:${port}`, apps: data.apps }
+        return { base: base, apps: data.apps }
       })
       .catch(function () {
         return null
@@ -80,7 +121,7 @@
       ports.push(port)
     }
     return Promise.all(ports.map(function (port) {
-      return probe(host, port)
+      return loadManifest(`http://${host}:${port}`)
     })).then(function (results) {
       return results.find(function (result) {
         return result !== null
@@ -234,13 +275,24 @@
   async function detect() {
     if (busy) return
     busy = true
-    showLoading()
+
+    const cached = readCache()
+    if (cached) {
+      showShelf(cached.apps, cached.base)
+    } else {
+      showLoading()
+    }
 
     try {
-      const found = await findRibbon()
+      let found = null
+      if (cached) found = await loadManifest(cached.base)
+      if (!found) found = await findRibbon()
+
       if (found) {
+        writeCache(found)
         showShelf(found.apps, found.base)
       } else {
+        dropCache()
         showNotice(
           "Ribbon is not running.",
           "Start Ribbon in a terminal and keep the window open, then check again.",

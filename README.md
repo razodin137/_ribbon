@@ -75,9 +75,12 @@ that inside it.
 The page shows one card for each project. The card has the project name and
 the colour for its kind. Click a card to open the project in the same tab.
 
-Ribbon must be running for the cards to appear. The extension looks for it on
-the usual ports, 8765 to 8784. If Ribbon is not running, the page says so and
-shows the command to start it. Start Ribbon, then click **Check again**.
+Ribbon must be running for the cards to appear. The first time, the extension
+looks for it on the usual ports, 8765 to 8784. After that it remembers the
+address that answered, so a new tab shows your cards right away and only looks
+at the port range again if that address has gone away. If Ribbon is not running,
+the page says so and shows the command to start it. Start Ribbon, then click
+**Check again**.
 
 If you start Ribbon with `--port` outside that range, the new tab page will
 not find it. Leave out `--port` to use the usual range.

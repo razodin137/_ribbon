@@ -85,6 +85,15 @@ tries, and accepts a response only when its JSON has an `apps` array. Probe all
 20 ports in parallel, then move to the next host, so a new tab does not wait a
 timeout per closed port. Keep the range constants in sync with `cli.py`.
 
+`newtab.js` stores the last base URL and its manifest in `localStorage` under
+`ribbon.newtab`. A new tab paints that snapshot right away, then asks the cached
+base for a fresh manifest. The port scan above runs only when that request
+fails, so a live Ribbon never costs a scan and a new tab never waits on ports
+that are closed. `normalizeBase()` accepts only the three hosts and
+`http`/`https`, so a hand-edited cache cannot point the page elsewhere. The page
+still uses no `chrome.*` API; `localStorage` is synchronous, which lets the
+snapshot land without waiting for storage.
+
 Ribbon's manifest is `/__ribbon/manifest.json`. Each app carries `title`,
 `type`, `color`, `description`, `url`, and Git state. Cards link to
 `base + app.url` with no `target`, so a click replaces the new tab as asked.

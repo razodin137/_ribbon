@@ -11,6 +11,32 @@
   const PROBE_TIMEOUT_MS = 800
   const HOSTS = [ "127.0.0.1", "localhost", "[::1]" ]
   const DESCRIPTION_LIMIT = 150
+  const STATE_LABELS = {
+    clean: "all pushed",
+    dirty: "unsaved changes",
+    ahead: "commits to push",
+    behind: "behind the remote",
+    diverged: "ahead and behind",
+    "no-upstream": "not linked to a remote",
+    "no-commits": "no commits yet",
+    detached: "detached HEAD",
+    conflicted: "conflicts to resolve",
+    "no-repo": "no git",
+    error: "git unavailable"
+  }
+  const STATE_TONES = {
+    clean: "ok",
+    dirty: "warn",
+    ahead: "bad",
+    behind: "warn",
+    diverged: "bad",
+    "no-upstream": "warn",
+    "no-commits": "warn",
+    detached: "warn",
+    conflicted: "bad",
+    "no-repo": "off",
+    error: "off"
+  }
 
   const loadingEl = document.getElementById("loading")
   const noticeEl = document.getElementById("notice")
@@ -75,6 +101,33 @@
     return text.slice(0, DESCRIPTION_LIMIT - 1).trimEnd() + "…"
   }
 
+  function stateWord(tone, label) {
+    const item = document.createElement("span")
+    item.className = "git-state"
+    const dot = document.createElement("span")
+    dot.className = "git-dot " + tone
+    dot.setAttribute("aria-hidden", "true")
+    const text = document.createElement("span")
+    text.textContent = label
+    item.append(dot, text)
+    return item
+  }
+
+  function gitState(git) {
+    if (!git || typeof git !== "object") return null
+    const state = typeof git.state === "string" ? git.state : ""
+    const label = STATE_LABELS[state] || state
+    if (!label) return null
+
+    const status = document.createElement("span")
+    status.className = "status"
+    status.append(stateWord(STATE_TONES[state] || "off", label))
+    if (git.dirty && state !== "dirty") {
+      status.append(stateWord("warn", STATE_LABELS.dirty))
+    }
+    return status
+  }
+
   function projectCard(app, base) {
     const title = typeof app.title === "string" && app.title ? app.title : "Untitled"
     const type = typeof app.type === "string" && app.type ? app.type : "Folder"
@@ -119,6 +172,9 @@
       desc.textContent = shorten(description)
       card.append(desc)
     }
+
+    const status = gitState(app.git)
+    if (status) card.append(status)
 
     const open = document.createElement("span")
     open.className = "open"

@@ -110,6 +110,31 @@ refetching.
 
 `extension/newtab.css` is in the `npm run lint` Stylelint list.
 
+Each card renders the same three Git lights as the bar. `gitLights()`,
+`repoTip()`, `changesTip()`, and `remoteTip()` in `newtab.js` mirror the ones
+in `bar.js` on purpose: the bar loads asynchronously (and not at all when
+Ribbon is down), so cards cannot wait for `window.__RIBBON_BAR__`.
+`test/grid-lights.test.js` runs both implementations over the same cases and
+fails when they drift. The dots carry their tip on `title`, and the card's
+`aria-label` stays the app name and type.
+
+Each card is wrapped in `.card-shell` with the link in `.card` and a separate
+`.card-overview` button, because a button inside an anchor is invalid. The
+button opens `<dialog id="overview">`, whose iframe loads
+`/__ribbon/card/<path>/?embed=1`. The `embed=1` flag keeps the bar out of the
+iframe and adds `class="rc-embed"` to the card document, which makes its desk
+transparent instead of the warm cream page. `card.js` posts `{type: "ribbon-card-size"}` to the
+parent, and both `newtab.js` and `ribbon.js` set the iframe height from it, so
+the card is shaped to its own content. Both overviews sit on a warm cream
+scrim that is translucent and blurred, so the page or the homepage shows
+through around the card. The ribbon steps out of the way while an overview is
+open: `ribbon.js` sets `data-card-open` on the bar host, and `newtab.css` fades
+the host when its dialog is open, so the black strip never sits above the card.
+The card route serves every kind, including Markdown, so every grid item has an
+overview. `test/grid-overview.test.js` pins the URL encoding, the dialog, the
+size message, the scrim, and the ribbon stand-down; `hidden-paths.test.js`
+checks a Markdown folder's card returns 200.
+
 ### The same bar on the new tab
 
 The new tab draws no ribbon of its own. `newtab.js` finds Ribbon, fetches
@@ -430,9 +455,11 @@ permissive umask.
 | `view-transition.test.js` | View-transition opt-in, named bar, reduced motion |
 | `page-offset.test.js` | Pre-script root-element offset, hidden-state coupling, no post-load body padding |
 | `default-root.test.js` | The auto-detected root never climbs to `/`, a home folder, or a system folder; the wrapper and sibling layouts still resolve |
-| `hidden-paths.test.js` | A live server refuses dot entries, `%2e`-encoded ones, card listings, and symlinks out of the root, on GET and HEAD; normal pages and in-root symlinks still serve |
+| `hidden-paths.test.js` | A live server refuses dot entries, `%2e`-encoded ones, card listings, and symlinks out of the root, on GET and HEAD; normal pages, in-root symlinks, and a Markdown project's card still serve |
 | `injection.test.js` | `inject_html()` ignores `<body>` in comments and script strings, only trusts a real `</head>`/`</body>`, respects quoted `>` in an attribute, and does not shift offsets after inserting the stylesheet |
-| `home-button.test.js` | The bar's dropdown carries a plain, hidden home row, `home.js` points it at the new tab page, the manifest declares the content script and the web-accessible page, the new tab installs the server bar, and `build.py` keeps its bar copies in step |
+| `home-button.test.js` | The bar's title carries a hidden home button, `home.js` points it at the new tab page, the manifest declares the content script and the web-accessible page, the new tab installs the server bar, and `build.py` keeps its bar copies in step |
+| `grid-lights.test.js` | The grid card's `gitLights()` matches `bar.js` for every state, and a card renders all three dots |
+| `grid-overview.test.js` | The overview URL is encoded and embedded, each card has the overview button, the dialog is card-sized, the card reports its height, both overviews use the blurred cream scrim, and the ribbon steps aside while one is open |
 
 ## Style
 

@@ -9,6 +9,7 @@
   const START_PORT = 8765
   const PORT_COUNT = 20
   const PROBE_TIMEOUT_MS = 800
+  const CARD_ROUTE = "/__ribbon/card/"
   const HOSTS = [ "127.0.0.1", "localhost", "[::1]" ]
   const CACHE_KEY = "ribbon.newtab"
   const DESCRIPTION_LIMIT = 150
@@ -24,19 +25,6 @@
     conflicted: "conflicts to resolve",
     "no-repo": "no git",
     error: "git unavailable"
-  }
-  const STATE_TONES = {
-    clean: "ok",
-    dirty: "warn",
-    ahead: "bad",
-    behind: "warn",
-    diverged: "bad",
-    "no-upstream": "warn",
-    "no-commits": "warn",
-    detached: "warn",
-    conflicted: "bad",
-    "no-repo": "off",
-    error: "off"
   }
   const SORT_KEY = "ribbon.newtab.sort"
   const SORT_MODES = [ "status", "type", "name" ]
@@ -65,10 +53,14 @@
   const sortEl = document.getElementById("sortbar")
   const sortButtons = Array.from(document.querySelectorAll(".sort-option"))
   const shelfEl = document.getElementById("shelf")
+  const overviewEl = document.getElementById("overview")
+  const overviewCloseEl = document.getElementById("overview-close")
+  const overviewFrame = document.getElementById("overview-frame")
 
   let busy = false
   let shown = null
   let sortMode = readSort()
+  let overviewTrigger = null
 
   function normalizeBase(value) {
     try {
@@ -263,16 +255,78 @@
     return text.slice(0, DESCRIPTION_LIMIT - 1).trimEnd() + "…"
   }
 
-  function stateWord(tone, label) {
-    const item = document.createElement("span")
-    item.className = "git-state"
+  // Mirrors gitLights() in bar.js, so a card shows the same three dots as the
+  // bar: repository, changes, remote.
+  function gitLights(git) {
+    const repo = !!(git && git.repo)
+    const state = (git && git.state) || ""
+    const dirty = !!(git && (git.dirty || (git.files && git.files.length)))
+    const count = git && typeof git.dirty_count === "number" ? git.dirty_count : dirty ? 1 : 0
+    const hasRemote = !!(git && git.has_remote)
+    let remoteClass = "off"
+    if (repo && hasRemote) {
+      if (state === "ahead" || state === "diverged" || state === "conflicted") {
+        remoteClass = "bad"
+      } else if (
+        state === "behind" ||
+        state === "no-upstream" ||
+        state === "detached" ||
+        state === "no-commits"
+      ) {
+        remoteClass = "warn"
+      } else {
+        remoteClass = "ok"
+      }
+    }
+    return {
+      repo: repo,
+      dirty: dirty,
+      count: count,
+      hasRemote: hasRemote,
+      repoClass: repo ? "ok" : "off",
+      changesClass: !repo ? "off" : dirty ? "warn" : "ok",
+      remoteClass: remoteClass
+    }
+  }
+
+  function repoTip(git) {
+    if (!git || !git.repo) {
+      return git && git.state === "error"
+        ? "Git status unavailable"
+        : "Not a Git repository"
+    }
+    return "Git repository" + (git.branch ? " — " + git.branch : "")
+  }
+
+  function changesTip(git, dirty, count) {
+    if (!git || !git.repo) return "No changes to track"
+    if (dirty) {
+      const n = count || 1
+      return n + " uncommitted file" + (n === 1 ? "" : "s")
+    }
+    return git.state === "no-commits" ? "No commits yet" : "No uncommitted changes"
+  }
+
+  function remoteTip(git, hasRemote) {
+    if (!git || !git.repo) return "No remote"
+    if (!hasRemote) return "No remote"
+    if (git.state === "conflicted") return "Conflicts to resolve"
+    if (git.state === "no-commits") return "No commits yet"
+    if (git.state === "detached") return "Detached HEAD"
+    const bits = []
+    if (git.ahead) bits.push(git.ahead + " to push")
+    if (git.behind) bits.push(git.behind + " behind")
+    if (bits.length) return bits.join(" · ")
+    if (git.state === "no-upstream") return "Remote set, no upstream"
+    return "Up to date" + (git.upstream ? " with " + git.upstream : "")
+  }
+
+  function gitDot(tone, tip) {
     const dot = document.createElement("span")
     dot.className = "git-dot " + tone
+    dot.title = tip
     dot.setAttribute("aria-hidden", "true")
-    const text = document.createElement("span")
-    text.textContent = label
-    item.append(dot, text)
-    return item
+    return dot
   }
 
   function gitState(git) {
@@ -281,13 +335,63 @@
     const label = STATE_LABELS[state] || state
     if (!label) return null
 
+    const lights = gitLights(git)
     const status = document.createElement("span")
     status.className = "status"
-    status.append(stateWord(STATE_TONES[state] || "off", label))
-    if (git.dirty && state !== "dirty") {
-      status.append(stateWord("warn", STATE_LABELS.dirty))
-    }
+
+    const dots = document.createElement("span")
+    dots.className = "git-lights"
+    dots.append(
+      gitDot(lights.repoClass, repoTip(git)),
+      gitDot(lights.changesClass, changesTip(git, lights.dirty, lights.count)),
+      gitDot(lights.remoteClass, remoteTip(git, lights.hasRemote))
+    )
+
+    const summary = document.createElement("span")
+    summary.className = "git-summary"
+    summary.textContent = label
+
+    status.append(dots, summary)
     return status
+  }
+
+  function overviewUrl(app, base) {
+    const rel = typeof app.path === "string" ? app.path.replace(/^\/+|\/+$/g, "") : ""
+    if (!rel) return ""
+    const parts = rel.split("/").map(encodeURIComponent)
+    return `${base}${CARD_ROUTE}${parts.join("/")}/?embed=1`
+  }
+
+  function openOverview(app, base) {
+    const url = overviewUrl(app, base)
+    if (!url) return
+    overviewTrigger = document.activeElement
+    const title = nameOf(app)
+    overviewEl.setAttribute("aria-label", "Overview of " + title)
+    overviewFrame.title = "Overview of " + title
+    overviewFrame.style.height = "320px"
+    overviewFrame.src = url
+    if (!overviewEl.open) overviewEl.showModal()
+  }
+
+  function closeOverview() {
+    if (overviewEl.open) overviewEl.close()
+  }
+
+  function overviewButton(app, base) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "card-overview"
+    button.setAttribute("aria-label", "Overview of " + nameOf(app))
+    button.title = "Overview"
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+      '<rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>'
+    button.addEventListener("click", function () {
+      openOverview(app, base)
+    })
+    return button
   }
 
   function projectCard(app, base) {
@@ -348,7 +452,11 @@
     open.append(arrow)
     card.append(open)
 
-    return card
+    const shell = document.createElement("div")
+    shell.className = "card-shell"
+    shell.append(card)
+    if (overviewUrl(app, base)) shell.append(overviewButton(app, base))
+    return shell
   }
 
   function showLoading() {
@@ -440,6 +548,28 @@
       busy = false
     }
   }
+
+  overviewCloseEl.addEventListener("click", closeOverview)
+  overviewEl.addEventListener("click", function (event) {
+    if (event.target === overviewEl) closeOverview()
+  })
+  overviewEl.addEventListener("close", function () {
+    overviewFrame.src = "about:blank"
+    overviewFrame.style.removeProperty("height")
+    if (overviewTrigger && typeof overviewTrigger.focus === "function") {
+      overviewTrigger.focus()
+    }
+    overviewTrigger = null
+  })
+  window.addEventListener("message", function (event) {
+    if (!overviewEl.open) return
+    if (!overviewFrame.contentWindow || event.source !== overviewFrame.contentWindow) return
+    const data = event.data
+    if (!data || data.type !== "ribbon-card-size") return
+    const height = Number(data.height)
+    if (!Number.isFinite(height) || height <= 0) return
+    overviewFrame.style.height = Math.ceil(height) + "px"
+  })
 
   for (const button of sortButtons) {
     button.addEventListener("click", function () {

@@ -944,52 +944,73 @@
 
 .card-overlay {
   position: fixed;
-  inset: var(--bar-h) 0 0;
+  inset: 0;
   z-index: 90;
-  overflow: hidden;
-  background: #171814;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: auto;
+  padding: 72px 16px 56px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255, 253, 248, .5), transparent 62%),
+    rgba(246, 240, 226, .78);
+  backdrop-filter: blur(14px) saturate(1.06);
+  -webkit-backdrop-filter: blur(14px) saturate(1.06);
+  color-scheme: light;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(58, 51, 39, .28) transparent;
   pointer-events: auto;
 }
 .card-overlay[hidden] { display: none; }
 
+/* The overview is a reading surface, so the ribbon steps aside while it is
+   open instead of leaving a black strip above it. */
+:host([data-card-open]) .bar {
+  transform: translateY(calc(-100% - 2px));
+  opacity: 0;
+  pointer-events: none;
+}
+
 .card-frame {
   display: block;
-  width: 100%;
-  height: 100%;
+  flex: none;
+  width: min(680px, 100%);
+  height: 60vh;
   margin: 0;
   border: 0;
-  background: #171814;
-  transform-origin: left center;
+  background: transparent;
+  transform-origin: center top;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 
 .card-close {
-  position: absolute;
+  position: fixed;
   top: 14px;
-  right: 16px;
+  right: max(16px, calc((100vw - 680px) / 2));
   z-index: 2;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: 32px;
   margin: 0;
-  padding: 0 11px;
-  border: 1px solid rgba(255, 255, 255, .16);
+  padding: 0 14px;
+  border: 1px solid rgba(58, 51, 39, .14);
   border-radius: 999px;
-  background: rgba(18, 19, 16, .72);
-  color: #ded8c8;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 10px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  background: rgba(255, 253, 248, .86);
+  color: #3a3327;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  box-shadow: 0 10px 26px -16px rgba(74, 55, 20, .7);
   cursor: pointer;
   pointer-events: auto;
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
-.card-close:hover { background: rgba(30, 31, 26, .92); color: #fff; }
-.card-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card-close:hover { background: #fffdf8; color: #241f18; }
+.card-close:focus-visible { outline: 2px solid #3a3327; outline-offset: 2px; }
 
 .peek {
   position: fixed;

@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --cream: #f6f0e2;
   --cream-deep: #eee3cf;
   --ink: #2f2a22;
@@ -256,8 +257,11 @@ h1 {
   box-shadow: 0 6px 12px -7px rgb(80 58 22 / 55%);
 }
 
-.card:hover {
+.card-shell:hover {
   transform: translateY(-3px);
+}
+
+.card:hover {
   box-shadow: 0 1px 0 rgb(255 255 255 / 70%) inset, 0 24px 38px -26px rgb(74 55 20 / 55%);
 }
 
@@ -266,10 +270,56 @@ h1 {
   outline-offset: 4px;
 }
 
+.card-shell {
+  position: relative;
+  display: flex;
+  transition: transform 0.18s ease;
+}
+
+.card-shell .card {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.card-overview {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.card-overview:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.card-overview:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.card-overview svg {
+  width: 14px;
+  height: 14px;
+}
+
 .card-top {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-right: 34px;
 }
 
 .swatch {
@@ -313,10 +363,13 @@ h1 {
   margin-top: -1px;
 }
 
-.git-state {
+.git-lights {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+}
+
+.git-summary {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.3;
@@ -369,6 +422,100 @@ h1 {
   line-height: 1;
 }
 
+.overview {
+  width: min(680px, calc(100vw - 32px));
+  height: auto;
+  max-width: none;
+  max-height: calc(100vh - 80px);
+  margin: 64px auto 16px;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(58 51 39 / 28%) transparent;
+  color-scheme: light;
+}
+
+.overview[open] {
+  display: block;
+  animation: overview-in 220ms cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+
+html:has(dialog.overview[open]) {
+  overflow: hidden;
+}
+
+.overview::backdrop {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgb(255 253 248 / 50%), transparent 62%),
+    rgb(246 240 226 / 78%);
+  backdrop-filter: blur(14px) saturate(1.06);
+  -webkit-backdrop-filter: blur(14px) saturate(1.06);
+}
+
+/* The ribbon steps aside while an overview is open, so the black strip does
+   not sit behind the scrim. */
+html:has(dialog.overview[open]) [data-ribbon-host] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.overview-close {
+  position: fixed;
+  top: 14px;
+  right: max(16px, calc((100vw - 680px) / 2));
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgb(255 253 248 / 86%);
+  border: 1px solid rgb(58 51 39 / 14%);
+  border-radius: 999px;
+  box-shadow: 0 10px 26px -16px rgb(74 55 20 / 70%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.overview-close:hover {
+  background: #fffdf8;
+  border-color: rgb(58 51 39 / 26%);
+}
+
+.overview-close:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.overview-frame {
+  display: block;
+  width: 100%;
+  height: 320px;
+  margin: 0;
+  background: transparent;
+  border: 0;
+}
+
+@keyframes overview-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.992);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -398,6 +545,10 @@ h1 {
     grid-template-columns: 1fr;
     gap: 28px;
   }
+
+  .overview {
+    width: calc(100vw - 16px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -405,13 +556,20 @@ h1 {
     animation: none;
   }
 
+  .overview[open] {
+    animation: none;
+  }
+
   .card,
   .open,
-  .retry {
+  .retry,
+  .card-shell,
+  .card-overview,
+  .overview-close {
     transition: none;
   }
 
-  .card:hover {
+  .card-shell:hover {
     transform: none;
   }
 }

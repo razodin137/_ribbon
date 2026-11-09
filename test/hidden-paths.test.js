@@ -39,6 +39,7 @@ function status(path, method = "GET") {
 function makeRoot() {
   write(join(root, "app", "index.html"), "<!doctype html><title>app</title>\n")
   write(join(root, "proj", "data.json"), "{}\n")
+  write(join(root, "notes", "README.md"), "# Notes\n")
   write(join(root, ".git", "config"), "[core]\n\trepositoryformatversion = 0\n")
   write(join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
   write(join(root, ".env"), "SECRET=not-a-real-secret\n")
@@ -140,4 +141,8 @@ test("normal pages and in-root symlinks still work", async () => {
   assert.equal(await status("/app/index.html"), 200)
   assert.equal(await status("/app-link/"), 200)
   assert.equal(await status("/__ribbon/card/proj"), 200)
+})
+
+test("a markdown project still has an overview card", async () => {
+  assert.equal(await status("/__ribbon/card/notes/"), 200)
 })

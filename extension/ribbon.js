@@ -315,6 +315,8 @@
     }
     let cardOpen = false
     let cardSwitch = 0
+    let cardScrollLocked = false
+    let savedOverflow = ""
 
     const ui = bar.createBar({
       root: shadow,
@@ -731,14 +733,14 @@
       if (!cardFrame.animate || motionReduced()) return
       const entering = cardFrame.animate(
         [
-          { transform: "perspective(1600px) rotateY(90deg)", opacity: 0 },
-          { transform: "perspective(1600px) rotateY(0deg)", opacity: 1 }
+          { transform: "translateY(16px) scale(.985)", opacity: 0 },
+          { transform: "translateY(0) scale(1)", opacity: 1 }
         ],
-        { duration: 260, easing: "cubic-bezier(.2, .7, .3, 1)" }
+        { duration: 240, easing: "cubic-bezier(.2, .7, .25, 1)" }
       )
       window.setTimeout(function () {
         if (entering.playState !== "finished") entering.cancel()
-      }, 420)
+      }, 400)
     }
 
     function animateCardOut(done) {
@@ -754,16 +756,16 @@
       }
       const out = cardFrame.animate(
         [
-          { transform: "perspective(1600px) rotateY(0deg)", opacity: 1 },
-          { transform: "perspective(1600px) rotateY(-90deg)", opacity: 0 }
+          { transform: "translateY(0) scale(1)", opacity: 1 },
+          { transform: "translateY(8px) scale(.99)", opacity: 0 }
         ],
         {
-          duration: 200,
-          easing: "cubic-bezier(.45, 0, .55, 1)",
+          duration: 180,
+          easing: "cubic-bezier(.4, 0, .7, .2)",
           fill: "forwards"
         }
       )
-      window.setTimeout(finish, 320)
+      window.setTimeout(finish, 280)
       out.finished.then(finish).catch(finish)
     }
 
@@ -774,9 +776,16 @@
         cardOpen = true
         cardSwitch += 1
         cancelCardAnimations()
+        cardFrame.style.removeProperty("height")
         cardFrame.title = (app.title ? app.title + " " : "") + "contents"
         cardFrame.src = cardAddress(app)
         cardOverlay.hidden = false
+        if (host) host.setAttribute("data-card-open", "")
+        if (!cardScrollLocked) {
+          savedOverflow = document.documentElement.style.overflow
+          document.documentElement.style.overflow = "hidden"
+          cardScrollLocked = true
+        }
         contentsButton.classList.add("is-active")
         contentsButton.setAttribute("aria-pressed", "true")
         contentsButton.setAttribute("aria-label", "Hide contents")
@@ -797,6 +806,12 @@
         if (serial !== cardSwitch) return
         cancelCardAnimations()
         cardOverlay.hidden = true
+        if (host) host.removeAttribute("data-card-open")
+        if (cardScrollLocked) {
+          document.documentElement.style.overflow = savedOverflow
+          cardScrollLocked = false
+        }
+        cardFrame.style.removeProperty("height")
         cardFrame.removeAttribute("src")
         try { contentsButton.focus() } catch (_) { /* ignore */ }
       })
@@ -1109,6 +1124,15 @@
           setCardOpen(false)
         })
       } catch (_) { /* cross-origin, leave the close button */ }
+    })
+    window.addEventListener("message", function (event) {
+      if (!cardOpen) return
+      if (!cardFrame.contentWindow || event.source !== cardFrame.contentWindow) return
+      const data = event.data
+      if (!data || data.type !== "ribbon-card-size") return
+      const height = Number(data.height)
+      if (!Number.isFinite(height) || height <= 0) return
+      cardFrame.style.height = Math.ceil(height) + "px"
     })
     peekEl.addEventListener("click", function () {
       setManual(false)

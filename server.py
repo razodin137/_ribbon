@@ -539,9 +539,6 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             info = project_info(target, rel_dir)
         if not info:
             info = folder_info(target, rel_dir)
-        if info["kind"] == "markdown":
-            self.send_error(404, "No project here")
-            return
         info["path"] = rel_dir
         try:
             info["mtime"] = int(target.stat().st_mtime)
@@ -549,11 +546,15 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             info["mtime"] = 0
         info["tree"] = folder_tree(target)
 
+        embed = info["kind"] == "page" or (
+            parse_qs(urlsplit(self.path).query).get("embed") == [ "1" ]
+        )
+        embed_class = ' class="rc-embed"' if embed else ""
         version = assets.asset_version()
         data = json.dumps(info, ensure_ascii=False).replace("</", "<\\/")
         doc = (
             "<!doctype html>\n"
-            '<html lang="en">\n'
+            f'<html lang="en"{embed_class}>\n'
             "<head>\n"
             '<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
@@ -562,14 +563,11 @@ class RibbonHandler(SimpleHTTPRequestHandler):
             f"<script>window.__RIBBON_CARD_APP__ = {data};</script>\n"
             f'<script src="{assets.asset_url("card.js", version)}" defer></script>\n'
             "</head>\n"
-            "<body>\n"
+            f"<body{embed_class}>\n"
             '<div id="ribbon-card"></div>\n'
             "</body>\n"
             "</html>\n"
         ).encode()
-        embed = info["kind"] == "page" or (
-            parse_qs(urlsplit(self.path).query).get("embed") == [ "1" ]
-        )
         payload = doc if embed else inject_html(doc, self.token, version)
 
         self._send_payload(

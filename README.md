@@ -73,7 +73,17 @@ not read a folder whose name starts with `_` — and `_ribbon` has folders like
 that inside it.
 
 The page shows one card for each project. The card has the project name and
-the colour for its kind. Click a card to open the project in the same tab.
+the colour for its kind. It also shows the same three Git dots as the ribbon:
+repository, changes, and remote. Hover a dot to read what it means. Click a
+card to open the project in the same tab.
+
+Each card has a small grid button in its top right corner. Click it to see the
+project overview without leaving the grid. The overview is the same cream card
+used elsewhere, sized to its own content. It floats over a soft, see-through
+cream wash, so the page still shows behind it. On a project page, open the
+ribbon's contents button for the same card. The black ribbon slides away while
+the card is open, then comes back when you close it. Press **Esc**, click
+outside the overview, or press **Close** to put it away.
 
 The cards can be sorted three ways, with the buttons above them. **Status** puts
 the projects that need the most Git work first, then the rest by name. **Type**

@@ -246,7 +246,9 @@
     const description = app.description || (
       app.kind === "page"
         ? "No description yet. Add a meta description or README to this folder."
-        : "A folder in your ribbon, shown here because it has no web page."
+        : app.kind === "markdown"
+          ? "A Markdown document in your ribbon."
+          : "A folder in your ribbon, shown here because it has no web page."
     )
     const stats = app.stats
     const tree = app.tree
@@ -258,7 +260,9 @@
       : ""
     const footer = app.kind === "page"
       ? "The folder behind this page."
-      : "No web page in this folder, so Ribbon shows its contents."
+      : app.kind === "markdown"
+        ? "The folder behind this document."
+        : "No web page in this folder, so Ribbon shows its contents."
 
     return '<article class="rc-card" style="--rc-accent: ' +
       esc(app.color || "#d0a64a") + '">' +
@@ -288,10 +292,29 @@
     "</article>"
   }
 
+  function reportSize() {
+    if (window.parent === window) return
+    const height = Math.ceil(
+      document.documentElement.getBoundingClientRect().height ||
+      document.documentElement.scrollHeight
+    )
+    if (!height) return
+    window.parent.postMessage({ type: "ribbon-card-size", height: height }, "*")
+  }
+
+  function watchSize(node) {
+    reportSize()
+    window.addEventListener("load", reportSize)
+    if (typeof ResizeObserver !== "function") return
+    const observer = new ResizeObserver(reportSize)
+    observer.observe(node)
+  }
+
   function mount() {
     const node = document.getElementById("ribbon-card")
     if (!node || !window.__RIBBON_CARD_APP__) return
     node.innerHTML = overviewHtml(window.__RIBBON_CARD_APP__)
+    watchSize(node)
   }
 
   if (document.readyState === "loading") {

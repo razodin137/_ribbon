@@ -75,6 +75,11 @@ that inside it.
 The page shows one card for each project. The card has the project name and
 the colour for its kind. Click a card to open the project in the same tab.
 
+The cards can be sorted three ways, with the buttons above them. **Status** puts
+the projects that need the most Git work first, then the rest by name. **Type**
+puts projects of the same kind together, like all the HTML ones. **Name** puts
+them in ABC order. Your choice is remembered the next time you open a tab.
+
 Ribbon must be running for the cards to appear. The first time, the extension
 looks for it on the usual ports, 8765 to 8784. After that it remembers the
 address that answered, so a new tab shows your cards right away and only looks

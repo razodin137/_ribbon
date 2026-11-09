@@ -100,6 +100,15 @@ Ribbon's manifest is `/__ribbon/manifest.json`. Each app carries `title`,
 When no probe succeeds, the page names the problem and shows
 `python3 ribbon.py` as the start command.
 
+The shelf sorts in `compareApps()`, and the choice lives in `localStorage`
+under `ribbon.newtab.sort` (`status`, `type`, or `name`; `status` is the
+default). `statusWork()` ranks a repo by `git.state` through `STATE_WORK`, so
+the order agrees with the bar's `gitWorkRank()`: most Git work first, and a
+`git.dirty` flag lifts a repo even when its state word says something else.
+`type` groups by the same `type` label the card shows, and every mode breaks
+ties by name. A new mode re-renders from the snapshot in `shown` instead of
+refetching.
+
 `extension/newtab.css` is in the `npm run lint` Stylelint list. The extension
 is standalone HTML/CSS/JS, so it is not part of `build.py`.
 

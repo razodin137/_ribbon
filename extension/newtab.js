@@ -38,6 +38,23 @@
     "no-repo": "off",
     error: "off"
   }
+  const SORT_KEY = "ribbon.newtab.sort"
+  const SORT_MODES = [ "status", "type", "name" ]
+  // How much work a repo still needs. Highest first, so a conflicted repo sits
+  // above a clean one. The words and tones match the bar's gitLights().
+  const STATE_WORK = {
+    conflicted: 9,
+    diverged: 8,
+    ahead: 7,
+    dirty: 6,
+    behind: 5,
+    detached: 4,
+    "no-upstream": 4,
+    "no-commits": 3,
+    error: 2,
+    "no-repo": 1,
+    clean: 0
+  }
 
   const loadingEl = document.getElementById("loading")
   const noticeEl = document.getElementById("notice")
@@ -45,9 +62,13 @@
   const noticeTextEl = document.getElementById("notice-text")
   const commandEl = document.getElementById("notice-command")
   const retryEl = document.getElementById("retry")
+  const sortEl = document.getElementById("sortbar")
+  const sortButtons = Array.from(document.querySelectorAll(".sort-option"))
   const shelfEl = document.getElementById("shelf")
 
   let busy = false
+  let shown = null
+  let sortMode = readSort()
 
   function normalizeBase(value) {
     try {
@@ -86,6 +107,69 @@
       localStorage.removeItem(CACHE_KEY)
     } catch (_) {
       return
+    }
+  }
+
+  function isSortMode(value) {
+    return SORT_MODES.includes(value)
+  }
+
+  function readSort() {
+    try {
+      const value = localStorage.getItem(SORT_KEY)
+      return isSortMode(value) ? value : "status"
+    } catch (_) {
+      return "status"
+    }
+  }
+
+  function writeSort(mode) {
+    try {
+      localStorage.setItem(SORT_KEY, mode)
+    } catch (_) {
+      return
+    }
+  }
+
+  function nameOf(app) {
+    return typeof app.title === "string" && app.title ? app.title : "Untitled"
+  }
+
+  function typeOf(app) {
+    return typeof app.type === "string" && app.type ? app.type : "Folder"
+  }
+
+  function statusWork(app) {
+    const git = app && app.git
+    if (!git || typeof git !== "object") return -1
+    const state = typeof git.state === "string" ? git.state : ""
+    let work = STATE_WORK[state] || 0
+    if (git.dirty && state !== "dirty") work += 0.5
+    return work
+  }
+
+  function compareApps(a, b, mode) {
+    if (mode === "status") {
+      const workA = statusWork(a)
+      const workB = statusWork(b)
+      if (workA !== workB) return workB - workA
+    } else if (mode === "type") {
+      const typeA = typeOf(a)
+      const typeB = typeOf(b)
+      if (typeA !== typeB) return typeA.localeCompare(typeB)
+    }
+    return nameOf(a).localeCompare(nameOf(b))
+  }
+
+  function sortApps(apps, mode) {
+    return apps.slice().sort(function (a, b) {
+      return compareApps(a, b, mode)
+    })
+  }
+
+  function syncSort() {
+    for (const button of sortButtons) {
+      button.setAttribute("aria-pressed", String(button.dataset.sort === sortMode))
     }
   }
 
@@ -170,8 +254,8 @@
   }
 
   function projectCard(app, base) {
-    const title = typeof app.title === "string" && app.title ? app.title : "Untitled"
-    const type = typeof app.type === "string" && app.type ? app.type : "Folder"
+    const title = nameOf(app)
+    const type = typeOf(app)
     let href
     try {
       href = new URL(app.url || "/", base + "/")
@@ -234,17 +318,21 @@
     loadingEl.hidden = false
     noticeEl.hidden = true
     shelfEl.hidden = true
+    sortEl.hidden = true
     retryEl.hidden = true
+    shown = null
   }
 
   function showNotice(title, text, withCommand) {
     loadingEl.hidden = true
     shelfEl.hidden = true
+    sortEl.hidden = true
     noticeEl.hidden = false
     retryEl.hidden = false
     noticeTitleEl.textContent = title
     noticeTextEl.textContent = text
     commandEl.hidden = !withCommand
+    shown = null
   }
 
   function showShelf(apps, base) {
@@ -258,7 +346,7 @@
     }
 
     const cards = []
-    for (const app of apps) {
+    for (const app of sortApps(apps, sortMode)) {
       const card = projectCard(app, base)
       if (card) cards.push(card)
     }
@@ -268,8 +356,19 @@
       return
     }
 
+    shown = { apps: apps, base: base }
+    syncSort()
+    sortEl.hidden = false
     shelfEl.replaceChildren(...cards)
     shelfEl.hidden = false
+  }
+
+  function setSort(mode) {
+    if (!isSortMode(mode)) return
+    sortMode = mode
+    writeSort(mode)
+    syncSort()
+    if (shown) showShelf(shown.apps, shown.base)
   }
 
   async function detect() {
@@ -302,6 +401,12 @@
     } finally {
       busy = false
     }
+  }
+
+  for (const button of sortButtons) {
+    button.addEventListener("click", function () {
+      setSort(button.dataset.sort)
+    })
   }
 
   retryEl.addEventListener("click", detect)

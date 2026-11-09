@@ -105,6 +105,11 @@ BAR_MARKUP = "".join(
   </div>
   <div class="title-wrap">
     <button class="star-btn title-star" type="button" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">☆</button>
+    <span class="home-wrap" data-home hidden>
+      <a class="title-home" data-home-link href="#" aria-label="Ribbon home" title="Back to Ribbon grid">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg>
+      </a>
+    </span>
     <button class="title" type="button" aria-haspopup="dialog" aria-expanded="false" title="Show all apps">
       <span class="title-text"></span>
       <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>

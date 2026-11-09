@@ -197,6 +197,21 @@
   border-color: transparent;
 }
 
+.home-wrap[hidden] { display: none; }
+.title-home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--muted);
+  flex: none;
+}
+.title-home:hover { background: rgba(255, 255, 255, .075); color: #f4f0e6; }
+.title-home:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.title-home svg { width: 15px; height: 15px; }
+
 .title {
   appearance: none;
   -webkit-appearance: none;

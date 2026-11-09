@@ -60,9 +60,9 @@ the surrounding Python style.
 | `bar.js` | Shared bar code: helpers and `createBar` |
 | `card.js`, `card.css` | Contents card |
 | `bar.css`, `markdown.css` | Bar and Markdown look |
-| `build.py` | zlib + base64 embed of the six browser assets into `assets.py` |
+| `build.py` | zlib + base64 embed of the six browser assets into `assets.py`; also copies `bar.js`/`ribbon.js` into `extension/` |
 | `test/` | `node:test` files; the Python side is exercised through `python3 -c` bridges |
-| `extension/` | Chrome MV3 new-tab extension: `manifest.json`, `newtab.html`, `newtab.css`, `newtab.js` |
+| `extension/` | Chrome MV3 new-tab extension: `manifest.json`, `newtab.html`, `newtab.css`, `newtab.js`, `home.js`, plus the generated `bar.js` and `ribbon.js` copies |
 | `README.md` | User-facing doc, fifth-grade reading level |
 | `AGENTS.md` | This file |
 
@@ -72,13 +72,12 @@ The six embedded assets are `bar.css`, `bar.js`, `card.css`, `card.js`,
 ## New tab extension
 
 `extension/` is a Manifest V3 extension loaded with **Load unpacked**. It
-overrides the new tab page with `newtab.html` and needs no icons or build step.
-
-The page currently uses no `chrome.*` API: it is a plain extension page with
-`host_permissions` for `http://127.0.0.1/*`, `http://localhost/*`, and
-`http://[::1]/*`. Those patterns ignore the port, and host permissions are what
-let the page fetch Ribbon's JSON cross-origin. Keep it that way unless a feature
-needs a privileged API.
+overrides the new tab page with `newtab.html` and needs no icons. The page is a
+plain extension page with `host_permissions` for `http://127.0.0.1/*`,
+`http://localhost/*`, and `http://[::1]/*`. Those patterns ignore the port, and
+host permissions are what let the page fetch Ribbon's JSON cross-origin. The
+only `chrome.*` call is `chrome.runtime.getURL` for the home link; keep the page
+otherwise API-free unless a feature needs a privileged API.
 
 `newtab.js` probes `8765` through `8784`, the same default window `cli.py`
 tries, and accepts a response only when its JSON has an `apps` array. Probe all
@@ -90,9 +89,9 @@ timeout per closed port. Keep the range constants in sync with `cli.py`.
 base for a fresh manifest. The port scan above runs only when that request
 fails, so a live Ribbon never costs a scan and a new tab never waits on ports
 that are closed. `normalizeBase()` accepts only the three hosts and
-`http`/`https`, so a hand-edited cache cannot point the page elsewhere. The page
-still uses no `chrome.*` API; `localStorage` is synchronous, which lets the
-snapshot land without waiting for storage.
+`http`/`https`, so a hand-edited cache cannot point the page elsewhere.
+`localStorage` is synchronous, which lets the snapshot land without waiting for
+storage.
 
 Ribbon's manifest is `/__ribbon/manifest.json`. Each app carries `title`,
 `type`, `color`, `description`, `url`, and Git state. Cards link to
@@ -109,8 +108,40 @@ the order agrees with the bar's `gitWorkRank()`: most Git work first, and a
 ties by name. A new mode re-renders from the snapshot in `shown` instead of
 refetching.
 
-`extension/newtab.css` is in the `npm run lint` Stylelint list. The extension
-is standalone HTML/CSS/JS, so it is not part of `build.py`.
+`extension/newtab.css` is in the `npm run lint` Stylelint list.
+
+### The same bar on the new tab
+
+The new tab draws no ribbon of its own. `newtab.js` finds Ribbon, fetches
+`/__ribbon/bar.html` (the same `bar_shell_html` a served page gets), inserts the
+shell, then loads the extension's copies of `bar.js` and `ribbon.js`. MV3 forbids
+remote script, so those two are local copies kept in step by `python3 build.py`;
+the shell and its CSS still come from the server, so the bar markup has one
+source. The page reserves the bar's height with `html::before` in `newtab.css`.
+
+`ribbon.js` reads three attributes for this case, set by `newtab.js` on the
+local `ribbon.js` tag: `data-ribbon-base` (the server origin, so the manifest
+and app links resolve there rather than at `chrome-extension://`),
+`data-ribbon-title="home"` (the name the dropdown shows when no app matches),
+and `data-ribbon-home` (the bar's home button). On a served page none of those
+are set, and `scriptBase` still comes from the script URL.
+
+The home control is a toolbar button beside the title star, not a dropdown
+row: `<span class="home-wrap" data-home hidden>` with an anchor
+`class="title-home" data-home-link` in `BAR_MARKUP`. The server cannot know
+the extension's address, so `extension/home.js` runs as a content script on the
+three hosts, sets the anchor's `href` from
+`globalThis.chrome.runtime.getURL("newtab.html")`, and clears `hidden`. It is
+static in the shell, so re-rendering the app lists cannot wipe it. The button
+carries no Git lights, star, or contents control, as asked.
+
+Two manifest entries carry that: `content_scripts` for `home.js`, and a
+`web_accessible_resources` entry exposing `newtab.html` to the same matches, so
+a project page may navigate to the grid. `home.js` is not copied by `build.py`.
+
+When Ribbon is not running the page has no base and shows no bar; the notice
+still names the start command. `test/home-button.test.js` pins the title home
+button, the content script, the manifest pair, and the bar install path.
 
 ## Build and embed contract
 
@@ -129,6 +160,11 @@ After editing any of the six assets, run `python3 build.py`. `npm run check`
 ends with `build.py --check`, which fails if the embed is stale. Do not edit the
 generated block by hand.
 
+The extension cannot load `bar.js` or `ribbon.js` from the server, so `build.py`
+also copies those two into `extension/`. `--check` fails when either copy drifts
+from its source. Edit the root file, never the copy. The `extension/newtab.css`
+and `newtab.js` files are hand-written, not generated.
+
 `build.py` refuses any CSS asset that contains `</style` (case-insensitive),
 because `bar_shell_html()` pastes the CSS into a `<style>` tag.
 
@@ -137,7 +173,7 @@ because `bar_shell_html()` pastes the CSS into a `<style>` tag.
 `RibbonHandler._handle()` in `server.py`:
 
 1. `/__ribbon/card/...` → `_serve_card()`
-2. `/__ribbon/...` → `_serve_asset()` (`manifest.json`, `git.json`,
+2. `/__ribbon/...` → `_serve_asset()` (`manifest.json`, `bar.html`, `git.json`,
    `delete.json`, or a static asset)
 3. `/` with no root `index.html` → redirect to the first app
 4. A directory → `index.html`, else `choose_html()`, else the chosen Markdown
@@ -396,6 +432,7 @@ permissive umask.
 | `default-root.test.js` | The auto-detected root never climbs to `/`, a home folder, or a system folder; the wrapper and sibling layouts still resolve |
 | `hidden-paths.test.js` | A live server refuses dot entries, `%2e`-encoded ones, card listings, and symlinks out of the root, on GET and HEAD; normal pages and in-root symlinks still serve |
 | `injection.test.js` | `inject_html()` ignores `<body>` in comments and script strings, only trusts a real `</head>`/`</body>`, respects quoted `>` in an attribute, and does not shift offsets after inserting the stylesheet |
+| `home-button.test.js` | The bar's dropdown carries a plain, hidden home row, `home.js` points it at the new tab page, the manifest declares the content script and the web-accessible page, the new tab installs the server bar, and `build.py` keeps its bar copies in step |
 
 ## Style
 

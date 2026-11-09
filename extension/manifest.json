@@ -10,5 +10,26 @@
     "http://127.0.0.1/*",
     "http://localhost/*",
     "http://[::1]/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1/*",
+        "http://localhost/*",
+        "http://[::1]/*"
+      ],
+      "js": [ "home.js" ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [ "newtab.html" ],
+      "matches": [
+        "http://127.0.0.1/*",
+        "http://localhost/*",
+        "http://[::1]/*"
+      ]
+    }
   ]
 }

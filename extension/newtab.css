@@ -25,6 +25,19 @@ html {
   background: var(--cream-deep);
 }
 
+/* The bar is fixed and lives in a shadow root over this page. Reserve its
+   height at first paint, and release it when the bar is hidden by hand. */
+html::before {
+  content: "";
+  display: block;
+  height: 40px;
+  pointer-events: none;
+}
+
+html:has([data-ribbon-host][data-ribbon-hidden])::before {
+  display: none;
+}
+
 body {
   min-height: 100vh;
   margin: 0;

@@ -600,6 +600,11 @@ class RibbonHandler(SimpleHTTPRequestHandler):
                     ensure_ascii=False,
                 ).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
+            elif name == "bar.html":
+                # The new tab extension cannot load a remote script, so it
+                # fetches this shell and adopts it with its local bar files.
+                payload = assets.bar_shell_html()
+                content_type = "text/html; charset=utf-8"
             elif name in STATIC_ASSETS:
                 payload = assets.asset_bytes(name)
                 content_type = (

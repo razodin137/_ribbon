@@ -199,6 +199,43 @@
       })
   }
 
+  const BAR_ROUTE = "/__ribbon/bar.html"
+  let barBase = null
+
+  // The real bar lives beside the server's assets. Fetch the same shell a
+  // served page gets, then load the extension's copies of bar.js and
+  // ribbon.js, pointed back at this Ribbon so app links resolve to it.
+  function installBar(base) {
+    if (barBase === base) return
+    barBase = base
+    fetch(`${base}${BAR_ROUTE}`, { cache: "no-cache" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status)
+        return response.text()
+      })
+      .then(function (html) {
+        if (document.querySelector("[data-ribbon-host]")) return
+        document.body.insertAdjacentHTML("afterbegin", html)
+        const barScript = document.createElement("script")
+        barScript.src = "bar.js"
+        barScript.addEventListener("load", function () {
+          const ribbonScript = document.createElement("script")
+          ribbonScript.src = "ribbon.js"
+          ribbonScript.setAttribute("data-ribbon-base", base)
+          ribbonScript.setAttribute("data-ribbon-title", "home")
+          ribbonScript.setAttribute(
+            "data-ribbon-home",
+            globalThis.chrome.runtime.getURL("newtab.html")
+          )
+          document.head.appendChild(ribbonScript)
+        })
+        document.head.appendChild(barScript)
+      })
+      .catch(function () {
+        barBase = null
+      })
+  }
+
   function scanHost(host) {
     const ports = []
     for (let port = START_PORT; port < START_PORT + PORT_COUNT; port++) {
@@ -389,6 +426,7 @@
 
       if (found) {
         writeCache(found)
+        installBar(found.base)
         showShelf(found.apps, found.base)
       } else {
         dropCache()

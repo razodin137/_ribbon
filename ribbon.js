@@ -17,10 +17,26 @@
 
   const scriptEl = document.currentScript || document.querySelector("script[data-ribbon]")
   let scriptBase = "/__ribbon/"
-  if (scriptEl && scriptEl.src) {
+  const baseAttr = scriptEl && scriptEl.getAttribute("data-ribbon-base")
+  if (baseAttr) {
+    try {
+      scriptBase = new URL("__ribbon/", baseAttr).href
+    } catch (_) { /* keep the default base */ }
+  } else if (scriptEl && scriptEl.src) {
     try {
       scriptBase = new URL(".", scriptEl.src).href
     } catch (_) { /* keep the default base */ }
+  }
+
+  // A served page loads the bar beside its own assets. The extension's new
+  // tab loads the same bar from the extension and points it back at the
+  // server, so app paths must resolve against the server, not the page.
+  function absoluteUrl(url) {
+    try {
+      return new URL(url, scriptBase).href
+    } catch (_) {
+      return url
+    }
   }
   const CACHE_KEY = "ribbon:apps:" + scriptBase
   const DECK_KEY = "ribbon:deck:" + scriptBase
@@ -156,6 +172,14 @@
     const shadow = host ? shadowRootFor(host) : null
     if (!shadow) return
 
+    const homeUrl = scriptEl && scriptEl.getAttribute("data-ribbon-home")
+    if (homeUrl) {
+      const homeWrap = shadow.querySelector("[data-home]")
+      const homeLink = homeWrap && homeWrap.querySelector("[data-home-link]")
+      if (homeLink) homeLink.href = homeUrl
+      if (homeWrap) homeWrap.hidden = false
+    }
+
     const barEl = shadow.querySelector(".bar")
     const countEl = shadow.querySelector(".count")
     const titleButton = shadow.querySelector(".title")
@@ -257,7 +281,11 @@
           }
         }
       }
-      const pageTitle = (document.title || "").trim()
+      const pageTitle = (
+        (scriptEl && scriptEl.getAttribute("data-ribbon-title")) ||
+        document.title ||
+        ""
+      ).trim()
       return {
         index: found,
         title: exact && apps[found]
@@ -348,7 +376,7 @@
       canDelete: canDelete,
       channel: { id: activeChannel, matches: channelMatches, label: channelLabel },
       getToken: function () { return ribbonToken },
-      onSelect: function (app) { location.assign(app.url) },
+      onSelect: function (app) { location.assign(absoluteUrl(app.url)) },
       onDelete: openDeletePanel,
       onChannel: function (id) {
         activeChannel = id || "all"
@@ -372,7 +400,11 @@
     // deliberate Back/Next is still near-instant without the idle traffic.
     let speculationJson = ""
     function applySpeculation() {
-      const urls = stale ? [] : bar.neighborUrls(apps, index)
+      const urls = stale
+        ? []
+        : bar.neighborUrls(apps, index).map(function (url) {
+          return absoluteUrl(url)
+        })
       const json = urls.length
         ? JSON.stringify({
           prerender: [ { source: "list", urls: urls, eagerness: "moderate" } ]
@@ -498,7 +530,7 @@
         target = (index + direction + apps.length) % apps.length
         if (target === index) return
       }
-      location.assign(apps[target].url)
+      location.assign(absoluteUrl(apps[target].url))
     }
 
     function drift() {
@@ -522,7 +554,7 @@
       }
       saveDeck()
       const app = appByKey(key)
-      if (app) location.assign(app.url)
+      if (app) location.assign(absoluteUrl(app.url))
     }
 
     function ensureDeck() {
@@ -1039,7 +1071,7 @@
           deleteReady = false
           removeDeletedApp(app)
           if (wasCurrent) {
-            location.assign(fallback ? fallback.url : "/")
+            location.assign(fallback ? absoluteUrl(fallback.url) : absoluteUrl("/"))
           } else {
             ui.openMenu()
           }
@@ -1298,7 +1330,7 @@
 
   function entryPath(app) {
     try {
-      return new URL(app.url, location.href).pathname
+      return new URL(app.url, scriptBase).pathname
     } catch (_) {
       return app.url
     }

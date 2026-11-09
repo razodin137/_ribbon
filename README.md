@@ -80,6 +80,10 @@ the projects that need the most Git work first, then the rest by name. **Type**
 puts projects of the same kind together, like all the HTML ones. **Name** puts
 them in ABC order. Your choice is remembered the next time you open a tab.
 
+The black ribbon sits at the top of the page and says which view you are on.
+On this grid it says **home**. From a project, click the little house button
+next to the star in the ribbon to come back here.
+
 Ribbon must be running for the cards to appear. The first time, the extension
 looks for it on the usual ports, 8765 to 8784. After that it remembers the
 address that answered, so a new tab shows your cards right away and only looks

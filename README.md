@@ -66,6 +66,12 @@ from a store.
 4. Pick the `extension` folder inside `_ribbon`.
 5. Open a new tab.
 
+Pick the `extension` folder itself, not the `_ribbon` folder that holds it.
+Chrome wants the folder with `manifest.json` right inside it. If you pick the
+`_ribbon` folder, Chrome says **Could not load manifest**, because Chrome will
+not read a folder whose name starts with `_` — and `_ribbon` has folders like
+that inside it.
+
 The page shows one card for each project. The card has the project name and
 the colour for its kind. Click a card to open the project in the same tab.
 

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ribbon</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">R</span>
+        <div>
+          <h1>Ribbon</h1>
+          <p class="tagline">A shelf for your projects.</p>
+        </div>
+      </div>
+      <button class="retry" id="retry" type="button" hidden>Check again</button>
+    </header>
+
+    <section class="panel" aria-live="polite">
+      <p class="loading" id="loading">Looking for Ribbon…</p>
+
+      <div class="notice" id="notice" hidden>
+        <h2 id="notice-title"></h2>
+        <p id="notice-text"></p>
+        <pre class="command" id="notice-command" hidden><code>python3 ribbon.py</code></pre>
+      </div>
+
+      <div class="shelf" id="shelf" hidden></div>
+    </section>
+  </main>
+
+  <script src="newtab.js" defer></script>
+</body>
+</html>

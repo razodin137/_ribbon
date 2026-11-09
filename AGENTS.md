@@ -62,11 +62,37 @@ the surrounding Python style.
 | `bar.css`, `markdown.css` | Bar and Markdown look |
 | `build.py` | zlib + base64 embed of the six browser assets into `assets.py` |
 | `test/` | `node:test` files; the Python side is exercised through `python3 -c` bridges |
+| `extension/` | Chrome MV3 new-tab extension: `manifest.json`, `newtab.html`, `newtab.css`, `newtab.js` |
 | `README.md` | User-facing doc, fifth-grade reading level |
 | `AGENTS.md` | This file |
 
 The six embedded assets are `bar.css`, `bar.js`, `card.css`, `card.js`,
 `markdown.css`, and `ribbon.js` (`ASSETS` in `build.py`).
+
+## New tab extension
+
+`extension/` is a Manifest V3 extension loaded with **Load unpacked**. It
+overrides the new tab page with `newtab.html` and needs no icons or build step.
+
+The page currently uses no `chrome.*` API: it is a plain extension page with
+`host_permissions` for `http://127.0.0.1/*`, `http://localhost/*`, and
+`http://[::1]/*`. Those patterns ignore the port, and host permissions are what
+let the page fetch Ribbon's JSON cross-origin. Keep it that way unless a feature
+needs a privileged API.
+
+`newtab.js` probes `8765` through `8784`, the same default window `cli.py`
+tries, and accepts a response only when its JSON has an `apps` array. Probe all
+20 ports in parallel, then move to the next host, so a new tab does not wait a
+timeout per closed port. Keep the range constants in sync with `cli.py`.
+
+Ribbon's manifest is `/__ribbon/manifest.json`. Each app carries `title`,
+`type`, `color`, `description`, `url`, and Git state. Cards link to
+`base + app.url` with no `target`, so a click replaces the new tab as asked.
+When no probe succeeds, the page names the problem and shows
+`python3 ribbon.py` as the start command.
+
+`extension/newtab.css` is in the `npm run lint` Stylelint list. The extension
+is standalone HTML/CSS/JS, so it is not part of `build.py`.
 
 ## Build and embed contract
 

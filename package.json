@@ -5,7 +5,7 @@
   "description": "A little bar that wraps around your vibe-coded projects, helps you surface them, and shows how far along they are.",
   "scripts": {
     "build": "python3 build.py",
-    "lint": "eslint . && stylelint \"bar.css\" \"card.css\" \"markdown.css\"",
+    "lint": "eslint . && stylelint \"bar.css\" \"card.css\" \"markdown.css\" \"extension/newtab.css\"",
     "test": "node --test",
     "check:python": "python3 -m py_compile *.py && python3 -c \"import ribbon, git_actions\"",
     "check:assets": "python3 build.py --check",

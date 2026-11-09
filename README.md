@@ -54,6 +54,28 @@ python3 /path/to/_ribbon/ribbon.py --root ~/my-projects
 Ribbon looks at the folders directly inside that place. It does not list the
 files inside those folders.
 
+## A shelf on every new tab
+
+Chrome can show your Ribbon projects every time you open a new tab. It uses a
+small extension that comes with Ribbon. You do not need to install anything
+from a store.
+
+1. Open `chrome://extensions`.
+2. Turn on **Developer mode** in the top right corner.
+3. Click **Load unpacked**.
+4. Pick the `extension` folder inside `_ribbon`.
+5. Open a new tab.
+
+The page shows one card for each project. The card has the project name and
+the colour for its kind. Click a card to open the project in the same tab.
+
+Ribbon must be running for the cards to appear. The extension looks for it on
+the usual ports, 8765 to 8784. If Ribbon is not running, the page says so and
+shows the command to start it. Start Ribbon, then click **Check again**.
+
+If you start Ribbon with `--port` outside that range, the new tab page will
+not find it. Leave out `--port` to use the usual range.
+
 ## What Ribbon shows
 
 - One row for each project folder.

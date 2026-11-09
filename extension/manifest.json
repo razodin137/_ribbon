@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Ribbon Shelf",
+  "version": "1.0.0",
+  "description": "A shelf of your Ribbon projects on every new tab.",
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://[::1]/*"
+  ]
+}
